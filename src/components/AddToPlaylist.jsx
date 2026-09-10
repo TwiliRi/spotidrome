@@ -14,7 +14,7 @@ export default function AddToPlaylist() {
   const setUI = useStore((s) => s.setUI);
   const playlists = useStore((s) => s.playlists);
   const pins = useStore((s) => s.settings.pins);
-  const { splitPlaylists, addTracksToPlaylist, createPlaylistWith, pinIndex } = useStore.getState();
+  const { splitPlaylists, addTracksToPlaylist, createPlaylistWith, pinIndex, orderPlaylists } = useStore.getState();
 
   const [q, setQ] = useState('');
   const [newName, setNewName] = useState('');
@@ -35,7 +35,7 @@ export default function AddToPlaylist() {
   }, [open, setUI]);
 
   const mine = useMemo(() => {
-    const list = splitPlaylists(playlists).mine;
+    const list = orderPlaylists(splitPlaylists(playlists).mine);
     const s = q.trim().toLowerCase();
     const found = s ? list.filter((p) => p.name.toLowerCase().includes(s)) : list;
     // закреплённые — вверх, остальные в порядке сервера

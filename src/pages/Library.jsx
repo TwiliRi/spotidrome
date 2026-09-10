@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import useStore from '../state/store';
 import { Card, Skeletons } from '../components/UI';
+import usePlaylistDnd from '../lib/usePlaylistDnd';
 
 const TABS = [
   { id: 'albums', label: 'Альбомы' },
@@ -28,9 +29,18 @@ export default function Library() {
   const playQueue = useStore((s) => s.playQueue);
   const setUI = useStore((s) => s.setUI);
   const splitPlaylists = useStore((s) => s.splitPlaylists);
-  const { mine, shared } = splitPlaylists(playlists);
+  const orderPlaylists = useStore((s) => s.orderPlaylists);
+  const playlistOrder = useStore((s) => s.settings.playlistOrder);
+  // порядок, расставленный перетаскиванием в медиатеке, действует и здесь
+  const ordered = useMemo(() => {
+    const { mine, shared } = splitPlaylists(playlists);
+    return { mine: orderPlaylists(mine), shared: orderPlaylists(shared) };
+  }, [playlists, playlistOrder, splitPlaylists, orderPlaylists]);
+  const { mine, shared } = ordered;
   const [albums, setAlbums] = useState(null);
   const [artists, setArtists] = useState(null);
+  // в сетке плейлисты переставляются мышью так же, как в медиатеке слева
+  const dnd = usePlaylistDnd({ axis: 'x' });
 
   useEffect(() => { setUI({ heroColor: '#121212', pageTitle: 'Моя медиатека' }); loadPlaylists(); }, []); // eslint-disable-line
 
@@ -75,7 +85,17 @@ export default function Library() {
       ) : <Skeletons n={12} />)}
 
       {tab === 'playlists' && (mine.length ? (
-        <div className="grid">{mine.map((p) => <Card key={p.id} item={p} kind="playlist" />)}</div>
+        <div className={`grid${dnd.drag ? ' dnd-on' : ''}`}>
+          {mine.map((p) => (
+            <Card
+              key={p.id}
+              item={p}
+              kind="playlist"
+              drag={dnd.dndProps({ id: p.id, kind: 'playlist', group: 'playlists' })}
+              dropClass={dnd.dndClass({ id: p.id, kind: 'playlist', group: 'playlists' })}
+            />
+          ))}
+        </div>
       ) : (
         <div className="muted">Своих плейлистов пока нет — создайте первый через «+» в боковой панели.</div>
       ))}
@@ -85,9 +105,16 @@ export default function Library() {
           <div className="muted" style={{ margin: '-8px 0 16px', fontSize: 13 }}>
             Плейлисты других пользователей сервера — их можно слушать, но не редактировать.
           </div>
-          <div className="grid">
+          <div className={`grid${dnd.drag ? ' dnd-on' : ''}`}>
             {shared.map((p) => (
-              <Card key={p.id} item={p} kind="playlist" sub={`${p.owner} • ${p.songCount || 0} треков`} />
+              <Card
+                key={p.id}
+                item={p}
+                kind="playlist"
+                sub={`${p.owner} • ${p.songCount || 0} треков`}
+                drag={dnd.dndProps({ id: p.id, kind: 'playlist', group: 'shared' })}
+                dropClass={dnd.dndClass({ id: p.id, kind: 'playlist', group: 'shared' })}
+              />
             ))}
           </div>
         </>

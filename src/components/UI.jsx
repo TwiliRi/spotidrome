@@ -142,7 +142,7 @@ export function placeholder(label = '') {
 }
 
 /* -------- Card -------- */
-export function Card({ item, kind = 'album', onPlay, onContextMenu, sub: subOverride }) {
+export function Card({ item, kind = 'album', onPlay, onContextMenu, sub: subOverride, drag, dropClass = '' }) {
   const nav = useNavigate();
   const to = kind === 'artist' ? `/artist/${item.id}` : kind === 'playlist' ? `/playlist/${item.id}` : `/album/${item.id}`;
   const sub = kind === 'artist' ? 'Исполнитель'
@@ -150,13 +150,14 @@ export function Card({ item, kind = 'album', onPlay, onContextMenu, sub: subOver
     : [item.year, item.artist].filter(Boolean).join(' • ');
   return (
     <div
-      className="card"
+      className={`card${dropClass ? ` ${dropClass}` : ''}`}
       onClick={() => nav(to)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(to); } }}
       onContextMenu={onContextMenu}
       role="button"
       tabIndex={0}
       title={item.name || item.title}
+      {...(drag || {})}
     >
       <div className="art-wrap">
         <Cover id={item.coverArt || item.id} size={400} alt={item.name || item.title} className={`art${kind === 'artist' ? ' round' : ''}`} />

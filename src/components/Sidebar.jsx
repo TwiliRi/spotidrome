@@ -3,10 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import Splitter from './Splitter';
 import api from '../lib/api';
+import usePlaylistDnd from '../lib/usePlaylistDnd';
 import { Cover } from './UI';
 import {
   Search, Library, LibraryFill, Plus, HeartFill, Download, ThumbDownFill, Clock,
-  ChevronLeft, ChevronRight, Expand as ExpandIc, PinIc, PinFillIc, QueueIc, Trash,
+  ChevronLeft, ChevronRight, Expand as ExpandIc, PinIc, PinFillIc, QueueIc, Trash, SyncIc,
 } from './Icons';
 import { songsWord, plural } from '../lib/util';
 
@@ -72,6 +73,10 @@ export default function Sidebar() {
   const libraryVersion = useStore((s) => s.libraryVersion);
   const setUI = useStore((s) => s.setUI);
   const addToQueue = useStore((s) => s.addToQueue);
+  const orderPlaylists = useStore((s) => s.orderPlaylists);
+  const movePlaylist = useStore((s) => s.movePlaylist);
+  const resetPlaylistOrder = useStore((s) => s.resetPlaylistOrder);
+  const playlistOrder = useStore((st) => st.settings.playlistOrder);
   const pins = useStore((st) => st.settings.pins);
   const dislikedCount = useStore((st) => st.dislikedIds.size);
   const playCount = useStore((st) => st.playHistory.length);
@@ -108,14 +113,15 @@ export default function Sidebar() {
       if (Object.keys(offline).length) {
         list.push({ id: '__offline', kind: 'offline', group: 'playlists', name: 'Офлайн', sub: `Загружено • ${songsWord(Object.keys(offline).length)}`, to: '/offline', fixed: true });
       }
-      list = list.concat(mine.map((p) => ({
+      // свой порядок (перетаскиванием) важнее того, что прислал сервер
+      list = list.concat(st.orderPlaylists(mine).map((p) => ({
         id: p.id, kind: 'playlist', group: 'playlists', name: p.name, coverArt: p.coverArt || p.id,
         sub: `Плейлист • ${p.public ? 'открыт всем' : 'только я'}`, to: `/playlist/${p.id}`, pl: p,
       })));
     }
     if (filter === 'all' || filter === 'shared') {
       // плейлисты других пользователей Navidrome: читаем, но не редактируем
-      list = list.concat(shared.map((p) => ({
+      list = list.concat(st.orderPlaylists(shared).map((p) => ({
         id: p.id, kind: 'playlist', group: 'shared', name: p.name, coverArt: p.coverArt || p.id,
         sub: `Общий плейлист • ${p.owner}`, to: `/playlist/${p.id}`, pl: p, shared: true,
       })));
@@ -143,7 +149,13 @@ export default function Sidebar() {
       .sort((a, b) => st.pinIndex(a.kind, a.id) - st.pinIndex(b.kind, b.id))
       .map((i) => ({ ...i, group: 'pinned' }));
     return [...pinnedItems, ...list.filter((i) => !i.pinned)];
-  }, [filter, playlists, albums, artists, q, offline, dislikedCount, pins, playCount]);
+  }, [filter, playlists, albums, artists, q, offline, dislikedCount, pins, playCount, playlistOrder, orderPlaylists]);
+
+  /* ------------------ перетаскивание плейлистов ------------------
+     Порядок хранится локально (settings.playlistOrder) и применяется везде,
+     где плейлисты показываются списком. Закреплённые строки переставляются
+     внутри своей группы — там порядок задают закрепления (settings.pins). */
+  const { drag, dndProps, dndClass } = usePlaylistDnd({ axis: 'y' });
 
   /* Меню по правому клику: закрепить, отправить в очередь, удалить */
   const rowMenu = (e, it) => {
@@ -183,6 +195,13 @@ export default function Sidebar() {
         },
       },
       it.shared && { label: 'Общий плейлист — только чтение', header: true },
+      // порядок плейлистов — локальный, поэтому его всегда можно откатить
+      (playlistOrder || []).length && { sep: true },
+      (playlistOrder || []).length && {
+        label: 'Сбросить порядок плейлистов',
+        icon: <SyncIc size={14} />,
+        onClick: () => resetPlaylistOrder(),
+      },
     ];
     setUI({ contextMenu: { x: e.clientX, y: e.clientY, items: items2 } });
   };
@@ -227,15 +246,16 @@ export default function Sidebar() {
             <span className="rail-head-arrow"><Unfold size={13} /></span>
           </button>
 
-          <div className="rail-list" onMouseLeave={() => setTip(null)}>
+          <div className={`rail-list${drag ? ' dnd-on' : ''}`} onMouseLeave={() => setTip(null)}>
             {items.map((it, i) => (
               <React.Fragment key={it.kind + it.id}>
                 {/* тонкая черта там, где начинается новая группа */}
                 {i > 0 && items[i - 1].group !== it.group && <span className="rail-sep" />}
                 <button
-                  className={`rail-item${loc.pathname === it.to ? ' active' : ''}${it.round ? ' round' : ''}`}
+                  className={`rail-item${loc.pathname === it.to ? ' active' : ''}${it.round ? ' round' : ''} ${dndClass(it)}`.trim()}
                   onClick={() => { nav(it.to); setTip(null); }}
                   onContextMenu={(e) => { setTip(null); rowMenu(e, it); }}
+                  {...dndProps(it)}
                   onMouseEnter={(e) => showTip(e, it)}
                   onFocus={(e) => showTip(e, it)}
                   onBlur={() => setTip(null)}
@@ -312,7 +332,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        <div className="lib-list">
+        <div className={`lib-list${drag ? ' dnd-on' : ''}`}>
           {items.map((it, i) => (
             <React.Fragment key={it.kind + it.id}>
               {(i === 0 || items[i - 1].group !== it.group) && (
@@ -322,9 +342,10 @@ export default function Sidebar() {
                 </div>
               )}
               <button
-                className={`lib-row${loc.pathname === it.to ? ' active' : ''}`}
+                className={`lib-row${loc.pathname === it.to ? ' active' : ''} ${dndClass(it)}`.trim()}
                 onClick={() => nav(it.to)}
                 onContextMenu={(e) => rowMenu(e, it)}
+                {...dndProps(it)}
               >
                 <ItemArt it={it} size={100} />
                 <div className="meta">

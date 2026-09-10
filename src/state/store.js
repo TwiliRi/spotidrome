@@ -9,6 +9,12 @@ import { songsWord } from '../lib/util';
 
 const desktop = typeof window !== 'undefined' ? window.desktop : null;
 
+/* Текущий маршрут. Его ставит App на каждый рендер — до рендера страниц, так
+   что страницы, проставляющие заголовок в своём эффекте, попадают уже в новый
+   адрес. Нужен, чтобы заголовок прошлой страницы не всплывал в шапке новой. */
+let routeNow = '';
+export function setRouteNow(path) { routeNow = path || ''; }
+
 let persistTimer = null;
 const lyricsWarmed = new Set();   // треки, тексты для которых уже подготавливали
 
@@ -55,6 +61,7 @@ const DEFAULT_SETTINGS = {
   hideDisliked: true,       // прятать исключённые треки в списках и подборках
   rollAnim: 'vinyl',        // анимация случайного трека: 'vinyl' | 'dice' | 'off'
   pins: [],                 // закреплённое в медиатеке: ['playlist:12', 'album:7', …]
+  playlistOrder: [],        // свой порядок плейлистов в медиатеке: ['pl-id', …] (перетаскиванием)
   rememberSearch: true,     // запоминать поисковые запросы (история под полем поиска)
   rememberPlays: true,      // запоминать, что играли (экран «Недавнее»)
   // тексты: если на сервере их нет (или они без таймкодов) — берём синхронный текст из LRCLIB
@@ -191,7 +198,10 @@ const useStore = create((set, get) => ({
   /* ---------- ui ---------- */
   toasts: [],
   nowPlayingOpen: false,
-  pagePlay: null,
+  pagePlay: null,           // «играть страницу» в шапке: ставит сама страница
+  pageTitle: '',            // заголовок в шапке при прокрутке
+  heroColor: '#121212',     // цвет героя — им подсвечивается шапка
+  pageRoute: '',            // маршрут, которому принадлежат эти три значения
   queueOpen: false,
   eqOpen: false,
   layoutOpen: false,
@@ -696,6 +706,49 @@ const useStore = create((set, get) => ({
     }
   },
 
+  /* ---------- свой порядок плейлистов ----------
+     Navidrome отдаёт плейлисты своим порядком (по алфавиту), а переставить их
+     на сервере нельзя: в Subsonic API нет «move playlist». Поэтому порядок
+     хранится локально — в settings.playlistOrder — и применяется везде, где
+     плейлисты показываются списком: медиатека слева, «Мои плейлисты», окно
+     «Добавить в плейлист». */
+
+  /** Плейлисты в сохранённом порядке; те, кого в списке ещё нет, — в конец. */
+  orderPlaylists(list) {
+    const arr = Array.isArray(list) ? list : get().playlists;
+    const order = get().settings.playlistOrder || [];
+    const rank = new Map(order.map((id, i) => [String(id), i]));
+    const tail = order.length + arr.length + 1;   // «неизвестные» идут после известных
+    return arr
+      .map((p, i) => ({ p, i, r: rank.has(String(p.id)) ? rank.get(String(p.id)) : tail }))
+      .sort((a, b) => (a.r - b.r) || (a.i - b.i))
+      .map((o) => o.p);
+  },
+
+  /**
+   * Переставить плейлист: поставить dragId перед/после targetId.
+   * targetId = null — в конец списка. before = true — перед целевой строкой.
+   */
+  movePlaylist(dragId, targetId, before = true) {
+    if (dragId == null || String(dragId) === String(targetId)) return false;
+    const all = get().playlists;
+    const order = (get().settings.playlistOrder || []).filter((id) => all.some((p) => String(p.id) === String(id)));
+    const missing = all.filter((p) => !order.some((id) => String(id) === String(p.id))).map((p) => p.id);
+    const ids = [...order, ...missing].filter((id) => String(id) !== String(dragId));
+    let at = targetId == null ? ids.length : ids.findIndex((id) => String(id) === String(targetId));
+    if (at < 0) at = ids.length;
+    ids.splice(before ? at : at + 1, 0, dragId);
+    get().updateSettings({ playlistOrder: ids });
+    return true;
+  },
+
+  resetPlaylistOrder() {
+    if (!(get().settings.playlistOrder || []).length) return false;
+    get().updateSettings({ playlistOrder: [] });
+    get().toast('Порядок плейлистов сброшен — как отдаёт сервер', 'success');
+    return true;
+  },
+
   /* ---------- закреплённое ---------- */
 
   isPinned(kind, id) { return (get().settings.pins || []).includes(`${kind}:${id}`); },
@@ -737,6 +790,36 @@ const useStore = create((set, get) => ({
       set({ starredIds: back });
       get().toast('Не удалось сохранить: ' + e.message, 'error');
     }
+  },
+
+  /**
+   * Массовое «в любимые» / «убрать из любимых» для пачки выделенных треков.
+   * Один запрос на трек, но один тост на всю пачку: по тосту на трек всплывает
+   * гора плашек, которая перекрывает список.
+   */
+  async setStarMany(items, on, kind = 'song') {
+    const list = (Array.isArray(items) ? items : [items]).filter(Boolean);
+    const todo = list.filter((t) => get().isStarred(t.id, kind) !== !!on);
+    if (!todo.length) { get().toast(on ? 'Уже в любимых' : 'И так не в любимых', 'info'); return true; }
+
+    // оптимистично перекрашиваем сердечки, как в одиночном toggleStar
+    const next = { ...get().starredIds, [kind]: new Set(get().starredIds[kind]) };
+    todo.forEach((t) => (on ? next[kind].add(t.id) : next[kind].delete(t.id)));
+    set({ starredIds: next });
+
+    let ok = 0;
+    for (const t of todo) {
+      try { on ? await api.star(t.id, kind) : await api.unstar(t.id, kind); ok++; } catch { /* один не удался — остальные всё равно дожимаем */ }
+    }
+    const failed = todo.length - ok;
+    if (failed) {
+      // сердечки, которые сервер не принял, возвращаем на место
+      get().loadStarred();
+      get().toast(`Не удалось изменить: ${failed} из ${todo.length}`, 'error');
+    } else {
+      get().toast(on ? `${todo.length} в любимых` : `${todo.length} удалено из любимых`, 'success');
+    }
+    return !failed;
   },
 
   /* ---------- playback ---------- */
@@ -1127,7 +1210,13 @@ const useStore = create((set, get) => ({
 
   clearQueue() { engine.pause(); set({ queue: [], queueSource: [], index: -1, time: 0, duration: 0 }); },
 
-  setUI(patch) { set(patch); },
+  setUI(patch) {
+    /* Заголовок, «играть страницу» и цвет героя принадлежат конкретному
+       маршруту: запоминаем, с какого адреса их поставили. Иначе перешёл
+       с альбома на главную — а в шапке при прокрутке всплывает старое название. */
+    if ('pageTitle' in patch || 'pagePlay' in patch || 'heroColor' in patch) set({ ...patch, pageRoute: routeNow });
+    else set(patch);
+  },
 
   /* ---------- мини-плеер ---------- */
   enterMini() {

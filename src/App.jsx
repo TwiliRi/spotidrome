@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
-import useStore from './state/store';
+import useStore, { setRouteNow } from './state/store';
 import useShortcuts from './lib/shortcuts';
 import useCompact from './lib/useCompact';
 import useUiLayout from './lib/uiLayout';
@@ -38,18 +38,30 @@ function Main() {
   const [scrolled, setScrolled] = useState(false);
   const heroColor = useStore((s) => s.heroColor);
   const pageTitle = useStore((s) => s.pageTitle);
+  const pagePlay = useStore((s) => s.pagePlay);
+  const pageRoute = useStore((s) => s.pageRoute);
   const libraryVersion = useStore((s) => s.libraryVersion);
+
+  /* Маршрут запоминаем прямо в рендере: страницы ставят заголовок в своих
+     эффектах, то есть уже после этого, — и их заголовок оказывается «своим»
+     для текущего адреса. Заголовок прошлой страницы мы просто не показываем. */
+  setRouteNow(loc.pathname);
+  const fresh = pageRoute === loc.pathname;
 
   useEffect(() => {
     ref.current?.scrollTo({ top: 0 });
     setScrolled(false);
-    useStore.getState().setUI({ pagePlay: null });
   }, [loc.pathname, loc.search]);
 
   return (
     <main className="main">
       <div className="scroll" ref={ref} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 80)}>
-        <TopBar scrolled={scrolled} heroColor={heroColor} title={pageTitle} />
+        <TopBar
+          scrolled={scrolled}
+          heroColor={fresh ? heroColor : '#121212'}
+          title={fresh ? pageTitle : ''}
+          pagePlay={fresh ? pagePlay : null}
+        />
         <Routes key={libraryVersion}>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<Search />} />

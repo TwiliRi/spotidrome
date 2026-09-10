@@ -4,8 +4,7 @@ import { Play, Pause } from './Icons';
 
 /* Тонкая контекстная панель внутри страницы: при прокрутке проявляется
    заголовок текущей страницы и компактная кнопка воспроизведения. */
-export default function TopBar({ scrolled, heroColor, title }) {
-  const pagePlay = useStore((s) => s.pagePlay);
+export default function TopBar({ scrolled, heroColor, title, pagePlay = null }) {
   const playing = useStore((s) => s.playing);
   const togglePlay = useStore((s) => s.togglePlay);
 

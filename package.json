@@ -30,7 +30,9 @@
     "test:smoke": "node tools/e2e-smoke.mjs",
     "test:virtual:ui": "node tools/e2e-virtual.mjs",
     "test:play-history": "node tools/test-play-history.mjs",
-    "test:recent:ui": "node tools/e2e-recent.mjs"
+    "test:recent:ui": "node tools/e2e-recent.mjs",
+    "test:multiselect:ui": "node tools/e2e-multiselect.mjs",
+    "test:uifixes:ui": "node tools/e2e-ui-fixes.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

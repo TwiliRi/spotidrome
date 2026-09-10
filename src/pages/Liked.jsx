@@ -15,6 +15,7 @@ export default function Liked() {
   const credentials = useStore((s) => s.credentials);
   const shuffle = useStore((s) => s.shuffle);
   const toggleShuffle = useStore((s) => s.toggleShuffle);
+  const setStarMany = useStore((s) => s.setStarMany);
   const [songs, setSongs] = useState(null);
   const hero = '#5038a0';
   useEffect(() => { setUI({ heroColor: hero, pageTitle: 'Любимые треки' }); }, [setUI]);
@@ -27,6 +28,13 @@ export default function Liked() {
     if (!songs?.length) return;
     setUI({ pagePlay: () => useStore.getState().playQueue(songs, 0, { type: 'liked', name: 'Любимые треки' }) });
   }, [songs, setUI]);
+
+  /** Пачкой снимаем сердечки: выделенные строки уходят из списка сразу. */
+  const removeMany = async (list) => {
+    const ids = new Set(list.map((t) => t.id));
+    const done = await setStarMany(list, false);
+    if (done) setSongs((prev) => (prev || []).filter((s) => !ids.has(s.id)));
+  };
 
   if (!songs) return <Spinner />;
   const isHere = current() && songs.some((s) => s.id === current().id);
@@ -58,7 +66,12 @@ export default function Liked() {
 
       <div className="page">
         {songs.length ? (
-          <TrackList tracks={songs} context={{ type: 'liked', name: 'Любимые треки' }} />
+          <TrackList
+            tracks={songs}
+            context={{ type: 'liked', name: 'Любимые треки' }}
+            onRemoveMany={removeMany}
+            removeLabel="Убрать из любимых"
+          />
         ) : (
           <div className="center-empty">
             <HeartFill size={40} />

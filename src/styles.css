@@ -67,7 +67,7 @@ input, textarea { font-family: inherit; }
   background: #000; -webkit-app-region: drag; user-select: none;
 }
 .titlebar.mac { padding-left: 82px; }
-.titlebar.blurred .tb-name, .titlebar.blurred .tb-pill, .titlebar.blurred .tb-search { opacity: .55; }
+.titlebar.blurred .tb-pill, .titlebar.blurred .tb-search { opacity: .55; }
 .titlebar::after {
   content: ''; position: absolute; left: 0; right: 0; top: var(--titlebar-h); height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent); pointer-events: none;
@@ -75,9 +75,6 @@ input, textarea { font-family: inherit; }
 .titlebar button, .titlebar input, .titlebar .no-drag { -webkit-app-region: no-drag; }
 
 .tb-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.tb-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.tb-logo { width: 30px; height: 30px; border-radius: 50%; background: var(--green); color: #000; display: grid; place-items: center; flex: none; }
-.tb-name { font-weight: 800; font-size: 15px; letter-spacing: -.02em; white-space: nowrap; }
 .tb-nav { display: flex; gap: 6px; }
 
 .tb-round {
@@ -1468,8 +1465,6 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 .app.no-sidebar.with-right.q-right { grid-template-columns: 1fr var(--rightbar-w); grid-template-areas: "title title" "main right" "player player"; }
 .app.no-sidebar.with-right.q-left { grid-template-columns: var(--rightbar-w) 1fr; grid-template-areas: "title title" "right main" "player player"; }
 .titlebar.minimal { padding: 0 6px 0 12px; }
-.titlebar.minimal .tb-logo { width: 18px; height: 18px; }
-.titlebar.minimal .tb-name { font-size: 12px; color: var(--text-dim); }
 .titlebar.minimal .tb-winbtn { height: 26px; }
 
 /* ==================== модалка «Интерфейс и раскладка» ==================== */
@@ -1729,3 +1724,47 @@ body.resizing-x .app, body.resizing-y .app { transition: none; }
   font-size: 11px; letter-spacing: .04em;
 }
 .ghost-btn.pinned { color: var(--green); }
+
+/* =================== мультивыбор в списках треков ===================
+   Выделение строк: Shift — диапазон, Ctrl/Cmd — по одному, Ctrl+A — всё,
+   Esc — снять. Над списком появляется панель с действиями над пачкой. */
+.tracks:focus { outline: none; }
+
+.track-row.sel { background: rgba(30,215,96,.15); }
+.track-row.sel:hover { background: rgba(30,215,96,.22); }
+.track-row .idx .sel-check { display: none; place-items: center; color: var(--green); cursor: pointer; }
+.track-row.sel .idx .num,
+.track-row.sel .idx .play-ic { display: none; }
+.track-row.sel .idx .sel-check { display: inline-grid; }
+.track-row.sel:hover .idx .sel-check { display: none; }
+.track-row.sel:hover .idx .play-ic { display: block; color: #fff; }
+
+.sel-bar {
+  position: sticky; top: 92px; z-index: 6;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 2px 0 10px; padding: 8px 12px;
+  border-radius: 8px; border: 1px solid rgba(30,215,96,.32);
+  background: rgba(30,215,96,.12);
+  backdrop-filter: blur(6px);
+}
+.sel-bar .sel-count { font-size: 13px; color: #fff; margin-right: 4px; }
+.sel-bar .sel-count b { font-size: 15px; }
+.sel-bar .chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.12); }
+.sel-bar .chip:hover { background: rgba(255,255,255,.2); }
+.sel-bar .chip.danger { color: #f5707a; }
+.sel-bar .chip.danger:hover { background: rgba(245,112,122,.18); }
+.sel-bar .sel-hint { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+.sel-bar .sel-clear { width: 26px; height: 26px; }
+
+/* ================ перетаскивание плейлистов в медиатеке ================ */
+.lib-row.dragging, .rail-item.dragging { opacity: .4; }
+.lib-row.drop-before, .rail-item.drop-before { box-shadow: inset 0 2px 0 var(--green); }
+.lib-row.drop-after, .rail-item.drop-after { box-shadow: inset 0 -2px 0 var(--green); }
+.lib-list.dnd-on .lib-row:not([draggable="true"]),
+.rail-list.dnd-on .rail-item:not([draggable="true"]) { opacity: .55; }
+
+/* карточки-плейлисты переставляются мышью и в сетке медиатеки */
+.card.dragging { opacity: .4; }
+.card.drop-before { box-shadow: inset 3px 0 0 var(--green); }
+.card.drop-after { box-shadow: inset -3px 0 0 var(--green); }
+.grid.dnd-on .card:not([draggable="true"]) { opacity: .55; }

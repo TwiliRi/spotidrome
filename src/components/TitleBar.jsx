@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import { filterHistory, timeAgo, normalizeQuery } from '../lib/searchHistory';
 import {
-  Logo, Home, HomeFill, Search, ChevronLeft, ChevronRight, Gear, Sliders,
+  Home, HomeFill, Search, ChevronLeft, ChevronRight, Gear, Sliders,
   Download, Info, Close, GridIc, Library, Check, ChevronDown, Dice, LayoutIc, Clock, Trash,
 } from './Icons';
 
@@ -153,10 +153,6 @@ export default function TitleBar({ minimal = false }) {
   return (
     <header className={`titlebar${isMac ? ' mac' : ''}${focused ? '' : ' blurred'}${minimal ? ' minimal' : ''}`}>
       <div className="tb-left">
-        <div className="tb-brand no-drag" onDoubleClick={() => desktop?.maximizeToggle?.()}>
-          <span className="tb-logo"><Logo size={26} /></span>
-          <span className="tb-name">Spotidrome</span>
-        </div>
         {!minimal && (
         <div className="tb-nav">
           <button className="tb-round sm no-drag" title="Назад" onClick={() => nav(-1)} disabled={!canBack}>

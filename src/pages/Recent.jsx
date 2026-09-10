@@ -69,6 +69,28 @@ export default function Recent() {
     return () => clearInterval(t);
   }, [loadLive]);
 
+  /* Переключили трек — не ждём минуту: сервер узнаёт о переключении, когда
+     клиент начал стрим, поэтому спрашиваем его почти сразу и ещё раз следом,
+     а на экране строку держим по локальному плееру (см. liveRows). */
+  useEffect(() => {
+    if (!cur?.id) return undefined;
+    const t1 = setTimeout(loadLive, 400);
+    const t2 = setTimeout(loadLive, 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [cur?.id, playing, loadLive]);
+
+  /* Что показать в «сейчас играет»: свой трек — сразу из плеера, остальные
+     устройства — как ответил сервер. Свою строку с сервера выбрасываем, чтобы
+     не мелькало старое название, пока сервер не догнал. */
+  const liveRows = useMemo(() => {
+    const mine = cur ? ({
+      id: cur.id, title: cur.title, album: cur.album, coverArt: cur.coverArt || cur.albumId,
+      username, playing, minutesAgo: 0, local: true,
+    }) : null;
+    const others = (live || []).filter((x) => !(mine && (x.id === mine.id || x.username === username)));
+    return mine ? [mine, ...others] : others;
+  }, [live, cur, playing, username]);
+
   const play = useCallback((list, from = 0, name = 'Недавнее') => {
     const arr = list.map(toSong);
     if (!arr.length) return;
@@ -219,16 +241,16 @@ export default function Recent() {
       </div>
 
       <div className="page">
-        {!!live.length && (
+        {!!liveRows.length && (
           <div className="live-row">
             <span className="live-cap"><i className="live-dot" />Сейчас играет</span>
-            {live.map((x, i) => (
-              <div key={`${x.username}-${x.id}-${i}`} className="live-chip" title={`${x.album} · ${x.username}`}>
+            {liveRows.map((x, i) => (
+              <div key={`${x.username}-${x.id}-${i}`} className={`live-chip${x.local ? ' mine' : ''}`} title={`${x.album} · ${x.username}`}>
                 <Cover id={x.coverArt} size={32} alt={x.album} />
                 <div style={{ minWidth: 0 }}>
                   <div className="ellipsis" style={{ fontSize: 13 }}>{x.title}</div>
                   <div className="ellipsis muted" style={{ fontSize: 11 }}>
-                    {x.username}{x.minutesAgo ? ` · ${x.minutesAgo} мин назад` : ''}{x.playing ? '' : ' · пауза'}
+                    {x.username}{x.local ? ' · сейчас' : x.minutesAgo ? ` · ${x.minutesAgo} мин назад` : ''}{x.playing ? '' : ' · пауза'}
                   </div>
                 </div>
               </div>

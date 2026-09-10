@@ -35,15 +35,23 @@ export default function Playlist() {
   const hero = useDominantColor(coverSrc, '#45318c');
   useEffect(() => { setUI({ heroColor: hero }); }, [hero, setUI]);
 
-  const load = () => api.getPlaylist(id)
+  /* alive = false — ушли с этого плейлиста, пока он грузился: заголовок из
+     ответа уже ни к чему, на новом адресе он всплыл бы чужим названием. */
+  const load = (alive = true) => api.getPlaylist(id)
     .then((d) => {
+      if (!alive) return;
       if (!d?.playlist) throw new Error('Плейлист не найден');
       setData(d); setError('');
       setName(d.playlist.name);
       setUI({ pageTitle: d.playlist.name });
     })
-    .catch((e) => setError(e.message || 'Не удалось загрузить плейлист'));
-  useEffect(() => { setData(null); setError(''); load(); }, [id]); // eslint-disable-line
+    .catch((e) => { if (alive) setError(e.message || 'Не удалось загрузить плейлист'); });
+  useEffect(() => {
+    let alive = true;
+    setData(null); setError('');
+    load(alive);
+    return () => { alive = false; };
+  }, [id]); // eslint-disable-line
 
   useEffect(() => {
     if (!data) return;
@@ -91,6 +99,36 @@ export default function Playlist() {
     try {
       await api.updatePlaylist(id, { songIndexToRemove: [index] });
     } catch (e) { toast(e.message, 'error'); return; }
+    load();
+    loadPlaylists();
+  };
+
+  /**
+   * Пачковое удаление: один updatePlaylist со списком songIndexToRemove.
+   * Номера строк из таблицы не годятся — в ней скрыты исключённые треки, —
+   * поэтому позиции ищем заново по исходному списку плейлиста. Сравниваем по
+   * самим объектам, а не по id: один и тот же трек может лежать в плейлисте
+   * дважды, и тогда удаляется только выделенная строка, а не обе. Убираем с
+   * конца, чтобы удаление не сдвигало ещё не обработанные позиции.
+   */
+  const removeMany = async (list, rowIndexes = []) => {
+    const visible = useStore.getState().filterDisliked(songs);
+    // номер строки в таблице → позиция в исходном списке (в таблице скрыты
+    // исключённые треки). Идём по двум спискам параллельно: один и тот же трек
+    // может лежать в плейлисте дважды, и удалить надо именно выделенную строку.
+    const posOf = [];
+    let v = 0;
+    songs.forEach((s, i) => { if (v < visible.length && visible[v] === s) { posOf.push(i); v += 1; } });
+    let indexes = rowIndexes.map((k) => posOf[k]).filter((i) => i != null);
+    if (!indexes.length) {                      // номера не пришли — удаляем по трекам
+      const chosen = new Set((list || []).filter(Boolean));
+      songs.forEach((s, i) => { if (chosen.has(s)) indexes.push(i); });
+    }
+    if (!indexes.length) { toast('Этих треков уже нет в плейлисте', 'info'); load(); return; }
+    try {
+      await api.updatePlaylist(id, { songIndexToRemove: indexes.sort((a, b) => b - a) });
+    } catch (e) { toast(e.message, 'error'); return; }
+    toast(`${songsWord(indexes.length)} удалено из плейлиста`, 'success');
     load();
     loadPlaylists();
   };
@@ -169,6 +207,7 @@ export default function Playlist() {
           tracks={songs}
           context={{ type: 'playlist', name: playlist.name }}
           onRemove={mine ? remove : undefined}
+          onRemoveMany={mine ? removeMany : undefined}
         />
       </div>
     </div>
