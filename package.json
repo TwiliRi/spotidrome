@@ -1,0 +1,98 @@
+{
+  "name": "spotidrome",
+  "version": "1.0.0",
+  "description": "Spotify-подобный десктоп-клиент для Navidrome",
+  "main": "electron/main.cjs",
+  "author": {
+    "name": "Spotidrome",
+    "email": "noreply@spotidrome.app"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dist": "vite build && electron-builder",
+    "start": "npm run dev:electron",
+    "dist:linux": "vite build && electron-builder --linux AppImage deb tar.gz",
+    "dist:win": "vite build && electron-builder --win nsis portable",
+    "dist:mac": "vite build && electron-builder --mac dmg zip",
+    "start:nix": "concurrently -k \"vite\" \"wait-on tcp:5173 && ${ELECTRON_BIN:-electron} .\"",
+    "zip": "bash tools/make-zip.sh",
+    "test:audit": "node tools/test-audit.mjs",
+    "test:lyrics": "node tools/test-lyrics.mjs",
+    "test:search-history": "node tools/test-search-history.mjs",
+    "test:lyrics:ui": "node tools/e2e-lyrics.mjs",
+    "test:search-history:ui": "node tools/e2e-search-history.mjs",
+    "test:audit:ui": "node tools/e2e-audit.mjs",
+    "test:smoke": "node tools/e2e-smoke.mjs",
+    "test:virtual:ui": "node tools/e2e-virtual.mjs",
+    "test:play-history": "node tools/test-play-history.mjs",
+    "test:recent:ui": "node tools/e2e-recent.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "react-window": "^2.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.0.1",
+    "electron": "^32.1.2",
+    "electron-builder": "^25.0.5",
+    "playwright": "^1.63.0",
+    "vite": "^5.4.8",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "app.spotidrome.desktop",
+    "productName": "Spotidrome",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Audio",
+      "icon": "assets/icon.png",
+      "maintainer": "Spotidrome <noreply@spotidrome.app>",
+      "synopsis": "Spotify-подобный клиент для Navidrome",
+      "description": "Десктоп-клиент для Navidrome: библиотека, плейлисты, очередь, тексты песен, эквалайзер, офлайн-кэш.",
+      "desktop": {
+        "StartupWMClass": "Spotidrome"
+      }
+    }
+  },
+  "homepage": "https://github.com/spotidrome/spotidrome",
+  "optionalDependencies": {
+    "mpris-service": "^2.1.2"
+  }
+}
