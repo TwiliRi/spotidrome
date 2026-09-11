@@ -13,6 +13,8 @@ import RightPanel from './components/RightPanel';
 import NowPlaying from './components/NowPlaying';
 import DiceRoll from './components/DiceRoll';
 import RandomVinyl from './components/RandomVinyl';
+import RandomCosmos from './components/RandomCosmos';
+import RandomBlackHole from './components/RandomBlackHole';
 import ContextMenu from './components/ContextMenu';
 import MiniPlayer from './components/MiniPlayer';
 import LayoutModal from './components/LayoutModal';
@@ -197,6 +199,8 @@ export default function App() {
       {nowPlayingOpen && <NowPlaying />}
       <DiceRoll />
       <RandomVinyl />
+      <RandomCosmos />
+      <RandomBlackHole />
       {eqOpen && <EqualizerModal />}
       {settingsOpen && <SettingsModal />}
       {layoutOpen && <LayoutModal />}

@@ -1768,3 +1768,224 @@ body.resizing-x .app, body.resizing-y .app { transition: none; }
 .card.drop-before { box-shadow: inset 3px 0 0 var(--green); }
 .card.drop-after { box-shadow: inset -3px 0 0 var(--green); }
 .grid.dnd-on .card:not([draggable="true"]) { opacity: .55; }
+
+/* ============= «Космос»: случайный трек в 3D (three.js) =============
+   Полёт сквозь туннель обложек: сцена рисует WebGL-холст, остальное —
+   свет, вспышка, зерно и подписи — обычный CSS поверх него. */
+.cos-overlay {
+  position: fixed; inset: 0; z-index: 1200; overflow: hidden;
+  cursor: pointer; -webkit-app-region: no-drag;
+}
+.cos-veil {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 92% at 50% 42%, rgba(11,13,22,.93), rgba(3,4,7,.985) 68%),
+    linear-gradient(180deg, #05070c, #000);
+  backdrop-filter: blur(26px) saturate(.9);
+  animation: rv-veil-in .38s cubic-bezier(.22,1,.3,1) both;
+}
+.cos-overlay.ph-expand .cos-veil { animation: rv-veil-out .42s .2s cubic-bezier(.3,0,.2,1) both; }
+
+.cos-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  animation: cos-scene-in .6s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes cos-scene-in { from { opacity: 0; transform: scale(1.07); } to { opacity: 1; transform: none; } }
+.cos-overlay.ph-expand .cos-canvas { animation: rv-scene-out .34s ease-in both; }
+
+/* глубина кадра: мягкое затемнение по краям поверх сцены */
+.cos-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(74% 60% at 50% 47%, transparent 34%, rgba(0,0,0,.62) 100%);
+}
+
+/* вспышка в момент, когда обложка разворачивается к камере */
+.cos-flash {
+  position: absolute; inset: -12%; pointer-events: none; opacity: 0;
+  background: radial-gradient(46% 40% at 50% 46%,
+    color-mix(in srgb, var(--accent) 65%, #fff), transparent 70%);
+}
+.cos-overlay.ph-top .cos-flash { animation: cos-flash .78s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes cos-flash {
+  0% { opacity: 0; transform: scale(.84); }
+  16% { opacity: .42; }
+  100% { opacity: 0; transform: scale(1.12); }
+}
+
+/* плёночное зерно: «космос» без него выглядит стерильно */
+.cos-grain {
+  position: absolute; inset: -50%; pointer-events: none; opacity: .05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: cos-grain 1.2s steps(3) infinite;
+}
+@keyframes cos-grain {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-1.5%, 1%); }
+  66% { transform: translate(1%, -1.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+.cos-caption {
+  position: absolute; left: 0; right: 0; bottom: 11vh;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  text-align: center; padding: 0 24px; pointer-events: none;
+}
+.cos-caption .k { font-size: 11px; letter-spacing: .24em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+.cos-caption .k.rolling { animation: rv-caption-pulse 1.3s ease-in-out infinite; }
+.cos-caption b {
+  font-size: clamp(24px, 3.6vw, 44px); font-weight: 800; letter-spacing: -.025em; color: #fff;
+  text-shadow: 0 6px 40px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: rv-caption-in .55s cubic-bezier(.16,1,.3,1) both;
+}
+.cos-caption i {
+  font-style: normal; font-size: 15px; color: rgba(255,255,255,.62);
+  animation: rv-caption-in .55s .07s cubic-bezier(.16,1,.3,1) both;
+}
+.cos-overlay.ph-expand .cos-caption { animation: rv-caption-out .3s ease-in both; }
+
+/* обложка, улетающая из портала в плеер */
+.cos-fly {
+  position: absolute; object-fit: cover; border-radius: 4%; z-index: 2;
+  will-change: transform, border-radius;
+  box-shadow: 0 40px 100px rgba(0,0,0,.7), 0 0 130px -20px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cos-overlay * { animation-duration: .01ms !important; }
+}
+
+
+/* ---------------- музыкальная папка трека ----------------
+   Плеер показывает, из какой библиотеки Navidrome взят трек: фонотеки часто
+   ведут раздельно (основная, винил, лайв), и у трека это не написано нигде.
+   Клик по метке ограничивает медиатеку этой папкой. */
+.np2-tag.folder {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 240px; padding: 4px 10px 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--green)) 45%, transparent);
+  background: color-mix(in srgb, var(--accent, var(--green)) 15%, rgba(255,255,255,.08));
+  color: color-mix(in srgb, var(--accent, var(--green)) 40%, #fff);
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.np2-tag.folder:hover {
+  background: color-mix(in srgb, var(--accent, var(--green)) 34%, rgba(255,255,255,.08));
+  border-color: color-mix(in srgb, var(--accent, var(--green)) 70%, transparent);
+  color: #fff;
+}
+.np2-tag.folder svg { flex: none; opacity: .9; }
+.np2-tag.folder span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pl-folder {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 200px; margin-top: 3px;
+  padding: 2px 8px 2px 6px; border-radius: 999px; border: 1px solid var(--line);
+  font-size: 10px; font-weight: 700; letter-spacing: .03em;
+  background: rgba(255,255,255,.05); color: var(--text-sub);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.pl-folder:hover {
+  background: color-mix(in srgb, var(--green) 20%, transparent);
+  border-color: color-mix(in srgb, var(--green) 55%, transparent);
+  color: #fff;
+}
+.pl-folder svg { flex: none; opacity: .8; }
+.pl-folder span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* ============= «Чёрная дыра»: случайный трек в 3D (three.js) =============
+   Сцена выплёвывает обложки из горизонта, потом засасывает их обратно, и из
+   дыры поднимается выпавший трек. Всё, кроме WebGL-холста, — обычный CSS. */
+.bh-overlay {
+  position: fixed; inset: 0; z-index: 1200; overflow: hidden;
+  cursor: pointer; -webkit-app-region: no-drag;
+}
+.bh-veil {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 92% at 50% 46%, rgba(8,8,13,.94), rgba(0,0,0,.99) 62%),
+    linear-gradient(180deg, #05050a, #000);
+  backdrop-filter: blur(26px) saturate(.9);
+  animation: rv-veil-in .38s cubic-bezier(.22,1,.3,1) both;
+}
+.bh-overlay.ph-expand .bh-veil { animation: rv-veil-out .42s .2s cubic-bezier(.3,0,.2,1) both; }
+
+.bh-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  animation: bh-scene-in .8s cubic-bezier(.16,1,.3,1) both;
+}
+/* сцена «притягивается»: кадр чуть шире, потом сходится к обычному */
+@keyframes bh-scene-in { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }
+.bh-overlay.ph-expand .bh-canvas { animation: rv-scene-out .34s ease-in both; }
+
+/* затемнение к краям; на всасывании стягивается внутрь вместе с обложками */
+.bh-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(70% 58% at 50% 46%, transparent 30%, rgba(0,0,0,.7) 100%);
+}
+.bh-overlay.ph-settle .bh-vignette { animation: bh-implode 1.15s cubic-bezier(.55,0,.75,0) both; }
+@keyframes bh-implode {
+  0% { transform: scale(1.22); opacity: .65; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* вспышка: короткая — на развороте потока, яркая — когда трек выходит из дыры */
+.bh-flash {
+  position: absolute; inset: -12%; pointer-events: none; opacity: 0;
+  background: radial-gradient(46% 40% at 50% 46%,
+    color-mix(in srgb, var(--accent) 65%, #fff), transparent 70%);
+}
+.bh-overlay.ph-settle .bh-flash { animation: bh-flash-turn .7s cubic-bezier(.3,0,.2,1) both; }
+@keyframes bh-flash-turn {
+  0% { opacity: 0; transform: scale(1.1); }
+  22% { opacity: .16; }
+  100% { opacity: 0; transform: scale(.92); }
+}
+.bh-overlay.ph-top .bh-flash { animation: bh-flash .78s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes bh-flash {
+  0% { opacity: 0; transform: scale(.8); }
+  16% { opacity: .46; }
+  100% { opacity: 0; transform: scale(1.14); }
+}
+
+.bh-grain {
+  position: absolute; inset: -50%; pointer-events: none; opacity: .05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: bh-grain 1.2s steps(3) infinite;
+}
+@keyframes bh-grain {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-1.5%, 1%); }
+  66% { transform: translate(1%, -1.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+.bh-caption {
+  position: absolute; left: 0; right: 0; bottom: 11vh;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  text-align: center; padding: 0 24px; pointer-events: none;
+}
+.bh-caption .k { font-size: 11px; letter-spacing: .24em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+.bh-caption .k.rolling { animation: rv-caption-pulse 1.3s ease-in-out infinite; }
+.bh-caption b {
+  font-size: clamp(24px, 3.6vw, 44px); font-weight: 800; letter-spacing: -.025em; color: #fff;
+  text-shadow: 0 6px 40px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: rv-caption-in .55s cubic-bezier(.16,1,.3,1) both;
+}
+.bh-caption i {
+  font-style: normal; font-size: 15px; color: rgba(255,255,255,.62);
+  animation: rv-caption-in .55s .07s cubic-bezier(.16,1,.3,1) both;
+}
+.bh-overlay.ph-expand .bh-caption { animation: rv-caption-out .3s ease-in both; }
+
+/* обложка, улетающая из горизонта в плеер */
+.bh-fly {
+  position: absolute; object-fit: cover; border-radius: 4%; z-index: 2;
+  will-change: transform, border-radius;
+  box-shadow: 0 40px 100px rgba(0,0,0,.7), 0 0 130px -20px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bh-overlay * { animation-duration: .01ms !important; }
+}
+
+/* пять режимов анимации в одной строке с подписью не влезают — кладём отдельно */
+.modal .row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
+.modal .row.stack .seg { flex-wrap: wrap; justify-content: flex-start; }

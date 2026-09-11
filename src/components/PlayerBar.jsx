@@ -6,7 +6,7 @@ import { Cover, Slider } from './UI';
 import {
   Play, Pause, Next, Prev, Shuffle, Repeat, RepeatOne, Heart, HeartFill,
   VolHigh, VolLow, VolMute, QueueIc, MicIc, Expand, Sliders, Download, Check, RadioIc,
-  ThumbDown, ThumbDownFill, MiniIc, LayoutIc,
+  ThumbDown, ThumbDownFill, MiniIc, LayoutIc, FolderIc,
 } from './Icons';
 import { fmt } from '../lib/util';
 import { volumeLabel } from '../lib/audio';
@@ -18,7 +18,7 @@ export default function PlayerBar() {
     current, playing, togglePlay, next, prev, time, duration, seek,
     shuffle, toggleShuffle, repeat, cycleRepeat, settings, setVolume, toggleMute,
     toggleStar, starredIds, setUI, queueOpen, nowPlayingOpen, offline, download, buffering,
-    toggleAutoDj, autodjBusy, toggleDislike, dislikedIds, enterMini,
+    toggleAutoDj, autodjBusy, toggleDislike, dislikedIds, enterMini, setMusicFolder,
   } = useStore();
   const dj = settings.autodj || {};
 
@@ -28,6 +28,8 @@ export default function PlayerBar() {
   const isStar = track && starredIds.song.has(track.id);
   const isBanned = track && dislikedIds.has(track.id);
   const isOff = track && !!offline[track.id];
+  // из какой музыкальной папки (библиотеки) этот трек
+  const folder = useStore((st) => (st.showTrackFolder() ? st.folderOfTrack(track) : null));
 
   const ui = settings.ui || {};
   const show = (id) => !(ui.leftHidden || []).includes(id);
@@ -72,6 +74,15 @@ export default function PlayerBar() {
             <div className="meta">
               <div className="t" onClick={() => track.albumId && nav(`/album/${track.albumId}`)}>{track.title}</div>
               <ArtistLinks item={track} className="a" />
+              {folder && (
+                <button
+                  className="pl-folder"
+                  title={`Музыкальная папка: ${folder.name} — показать только её`}
+                  onClick={() => setMusicFolder(folder.id)}
+                >
+                  <FolderIc size={10} /><span>{folder.name}</span>
+                </button>
+              )}
             </div>
             {show('like') && (
               <button className={`ghost-btn${isStar ? ' on' : ''}`} onClick={() => toggleStar(track, 'song')} title="В любимые" style={{ marginLeft: 8 }}>

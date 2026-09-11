@@ -5,6 +5,10 @@ import { pickAutoDj, modeName } from '../lib/autodj';
 import { pushHistory, dropHistory, normalizeQuery, HISTORY_MAX, MIN_QUERY } from '../lib/searchHistory';
 import { pushPlay, dropPlay, sanitizePlays, MIN_LISTEN_SEC } from '../lib/playHistory.js';
 import { prefetchCovers, resolveCover } from '../lib/covers';
+import {
+  EMPTY_INDEX as EMPTY_FOLDER_INDEX, folderIndexKey, buildAlbumFolderIndex, folderOfSong,
+  readFolderCache, writeFolderCache, dropFolderCache,
+} from '../lib/folderIndex';
 import { songsWord } from '../lib/util';
 
 const desktop = typeof window !== 'undefined' ? window.desktop : null;
@@ -149,6 +153,34 @@ const DICE = {
   expand: 780,             // 6. перелёт обложки в плеер
 };
 
+/* «Космос» (three.js): полёт сквозь туннель обложек. Разгон длиннее, чем у
+   кубика, — сцене нужно время набрать скорость, иначе прыжок выглядит рывком. */
+const COSMOS = {
+  intro: 460,              // 1. туннель проявляется из тумана
+  minSpin: 1500,           // минимум полёта: короткий разгон не читается
+  balanceAfter: 2700,      // 3. долгая загрузка → полёт замедляется
+  settle: 1000,            // 4. портал впереди, камера тормозит, стены расходятся
+  settleFromBalance: 1100,
+  camera: 1050,            // 5. обложка разворачивается к камере
+  reveal: 320,
+  hold: 320,               // пауза на результат
+  expand: 700,             // 6. перелёт обложки в плеер
+};
+
+/* «Чёрная дыра»: те же фазы, но у settle своя работа — поток обложек надо не
+   просто остановить, а развернуть и дать им долететь до горизонта. */
+const BLACKHOLE = {
+  intro: 420,              // 1. дыра проявляется, диск раскручивается
+  minSpin: 1600,           // 2. выброс: обложки летят от горизонта
+  balanceAfter: 2600,      // 3. долгая загрузка → поток переходит в дрейф
+  settle: 1250,            // 4. разворот потока и всасывание
+  settleFromBalance: 1300,
+  camera: 950,             // 5. обложка поднимается из горизонта
+  reveal: 320,
+  hold: 320,
+  expand: 700,             // 6. перелёт обложки в плеер
+};
+
 const useStore = create((set, get) => ({
   /* ---------- boot / auth ---------- */
   booted: false,
@@ -180,6 +212,11 @@ const useStore = create((set, get) => ({
 
   /* ---------- library caches ---------- */
   musicFolders: [],
+  /* Какой музыкальной папке принадлежит альбом (см. lib/folderIndex.js).
+     Индекс необязательный: пока он строится, метка в плеере просто не показывается. */
+  albumFolders: EMPTY_FOLDER_INDEX,
+  albumFoldersKey: '',
+  folderIndexBusy: false,
   libraryVersion: 0,
   playlists: [],
   starredIds: { song: new Set(), album: new Set(), artist: new Set() },
@@ -616,12 +653,60 @@ const useStore = create((set, get) => ({
   async loadMusicFolders() {
     const folders = await api.getMusicFolders();
     set({ musicFolders: folders });
+    get().loadFolderIndex();
     // выбранная папка исчезла на сервере — возвращаемся ко «Всем»
     const cur = get().settings.musicFolderId;
     if (cur != null && !folders.some((f) => String(f.id) === String(cur))) {
       get().setMusicFolder(null, true);
     }
     return folders;
+  },
+
+  /* ---------- индекс «альбом → музыкальная папка» ----------
+     Subsonic не говорит, из какой папки трек, поэтому соответствие собираем
+     сами и держим в памяти (плюс кэш в localStorage). Всё в фоне: плеер
+     показывает метку, как только индекс готов. */
+  async loadFolderIndex() {
+    const folders = get().musicFolders;
+    const key = folderIndexKey(api);
+    if (!folders.length) { set({ albumFolders: EMPTY_FOLDER_INDEX, albumFoldersKey: key }); return; }
+    if (get().albumFoldersKey === key) return;           // этот сервер уже индексировали
+
+    const cached = readFolderCache(key, folders);
+    set({ albumFolders: cached || EMPTY_FOLDER_INDEX, albumFoldersKey: key });
+    void get().refreshFolderIndex(key, folders);         // кэш мог устареть — обновим
+  },
+
+  async refreshFolderIndex(key, folders) {
+    if (get().folderIndexBusy) return;
+    set({ folderIndexBusy: true });
+    try {
+      const index = await buildAlbumFolderIndex(api, folders);
+      if (get().albumFoldersKey !== key) return;         // сервер успели сменить
+      if (index.ready) {
+        set({ albumFolders: index });
+        writeFolderCache(key, folders, index);
+      }
+    } catch (e) {
+      if (import.meta.env?.DEV) console.warn('[folders] индекс папок не собран:', e?.message || e);
+    } finally {
+      set({ folderIndexBusy: false });
+    }
+  },
+
+  /** Папка (библиотека), из которой взят трек; null — если не удалось понять. */
+  folderOfTrack(track) {
+    return folderOfSong(track, get().albumFolders);
+  },
+
+  /** Показывать ли метку папки: при одной папке на сервере она ни о чём не говорит. */
+  showTrackFolder() {
+    return get().musicFolders.length > 1;
+  },
+
+  forgetFolderIndex() {
+    dropFolderCache();
+    set({ albumFolders: EMPTY_FOLDER_INDEX, albumFoldersKey: '' });
   },
 
   setMusicFolder(id, silent = false) {
@@ -1038,8 +1123,9 @@ const useStore = create((set, get) => ({
 
     const rect = origin && { x: origin.left + origin.width / 2, y: origin.top + origin.height / 2 };
     const face = 1 + Math.floor(Math.random() * 6);
-    const kind = get().settings.rollAnim === 'dice' ? 'dice' : 'vinyl';
-    const T = kind === 'dice' ? DICE : VINYL;
+    const mode = get().settings.rollAnim;
+    const kind = mode === 'dice' ? 'dice' : mode === 'cosmos' ? 'cosmos' : mode === 'blackhole' ? 'blackhole' : 'vinyl';
+    const T = kind === 'dice' ? DICE : kind === 'cosmos' ? COSMOS : kind === 'blackhole' ? BLACKHOLE : VINYL;
     const wait = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
     const frames = (n = 1) => new Promise((r) => {
       const step = (k) => (k <= 0 ? r() : requestAnimationFrame(() => step(k - 1)));
@@ -1075,6 +1161,16 @@ const useStore = create((set, get) => ({
 
       const songs = await songsP;
       if (!songs.length) throw new Error('В библиотеке нечего играть');
+
+      /* Обложки треков, из которых идёт выбор: 3D-сцена берёт их, чтобы в кадре
+         летали настоящие обложки фонотеки, а не нарисованные заготовки. */
+      const pool = [];
+      for (let i = 0; i < songs.length && pool.length < 40; i++) {
+        const id = songs[i].coverArt || songs[i].albumId;
+        if (id) pool.push(id);
+      }
+      if (get().dice) set({ dice: { ...get().dice, pool } });
+
       const track = songs[0];
 
       // обложка должна быть готова до «приземления», иначе будет пустая грань
@@ -1107,6 +1203,18 @@ const useStore = create((set, get) => ({
       clearTimeout(balanceTimer);
       set({ randomBusy: false });
     }
+  },
+
+  /**
+   * Подменить сцену, не прерывая бросок. Нужно «Космосу»: без WebGL (старый
+   * драйвер, отключённое аппаратное ускорение) three.js не поднять, и тогда
+   * анимация продолжается проверенной плоской сценой.
+   */
+  setDiceKind(kind) {
+    const d = get().dice;
+    if (!d || d.kind === kind) return false;
+    set({ dice: { ...d, kind } });
+    return true;
   },
 
   /** Досрочно прервать анимацию (Esc / клик) — трек всё равно включится */
@@ -1243,4 +1351,5 @@ export default useStore;
 if (import.meta.env?.DEV && typeof window !== 'undefined') {
   window.__store = useStore;
   window.__engine = engine;
+  window.__api = api;              // чтобы в автотестах можно было замедлить сервер
 }

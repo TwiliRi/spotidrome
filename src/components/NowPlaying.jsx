@@ -13,7 +13,7 @@ import { useDominantColor, fmt, songsWord } from '../lib/util';
 import {
   Play, Pause, Next, Prev, Shuffle, Repeat, RepeatOne, Heart, HeartFill, Collapse, Plus,
   QueueIc, MicIc, VolHigh, VolLow, VolMute, Sliders, Download, Check, DotsH, Expand, ArtistIc,
-  ThumbDown, ThumbDownFill, SyncIc, Minus, TimeIc,
+  ThumbDown, ThumbDownFill, SyncIc, Minus, TimeIc, FolderIc,
 } from './Icons';
 
 /* ---------------- canvas-визуализатор ---------------- */
@@ -420,10 +420,11 @@ export default function NowPlaying() {
     current, playing, togglePlay, next, prev, time, duration, seek, setUI,
     shuffle, toggleShuffle, repeat, cycleRepeat, toggleStar, starredIds, settings,
     setVolume, toggleMute, offline, download, queue, index, context, addToQueue,
-    dislike, undislike, toggleDislike, dislikedIds,
+    dislike, undislike, toggleDislike, dislikedIds, setMusicFolder,
   } = useStore();
 
   const track = current();
+  const folder = useStore((st) => (st.showTrackFolder() ? st.folderOfTrack(track) : null));
   const [tab, setTab] = useState('lyrics');
   const [immersive, setImmersive] = useState(false);
   const coverSrc = useCoverSrc(track ? (track.coverArt || track.albumId) : null, 600);
@@ -512,6 +513,15 @@ export default function NowPlaying() {
                   {track.album && <> · <span onClick={() => { setUI({ nowPlayingOpen: false }); track.albumId && nav(`/album/${track.albumId}`); }}>{track.album}</span></>}
                 </div>
                 <div className="np2-tags">
+                  {folder && (
+                    <button
+                      className="np2-tag folder"
+                      title={`Музыкальная папка: ${folder.name} — показать только её`}
+                      onClick={() => { setMusicFolder(folder.id); setUI({ nowPlayingOpen: false }); }}
+                    >
+                      <FolderIc size={11} /><span>{folder.name}</span>
+                    </button>
+                  )}
                   {track.year && <span className="np2-tag">{track.year}</span>}
                   {track.suffix && <span className="np2-tag">{String(track.suffix).toUpperCase()}</span>}
                   {track.bitRate ? <span className="np2-tag">{track.bitRate} кбит/с</span> : null}

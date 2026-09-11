@@ -131,13 +131,13 @@ export function SettingsModal() {
         <span className="badge gray">{serverInfo?.type || 'navidrome'} {serverInfo?.serverVersion || ''}</span>
       </div>
 
-      <div className="row">
+      <div className="row stack">
         <div>
           <div className="lbl">Анимация случайного трека</div>
           <div className="hint">Что показывать при броске «случайный трек»</div>
         </div>
         <div className="seg">
-          {[['vinyl', 'Пластинка'], ['dice', 'Кубик'], ['off', 'Без анимации']].map(([v, t]) => (
+          {[['vinyl', 'Пластинка'], ['dice', 'Кубик'], ['cosmos', 'Космос 3D'], ['blackhole', 'Чёрная дыра'], ['off', 'Без анимации']].map(([v, t]) => (
             <button
               key={v}
               className={`seg-btn${(settings.rollAnim || 'vinyl') === v ? ' on' : ''}`}
