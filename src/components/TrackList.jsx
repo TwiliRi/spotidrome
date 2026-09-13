@@ -33,6 +33,7 @@ export default function TrackList({
   removeLabel = 'Удалить из плейлиста',
   virtual,                      // null — решать по длине списка
   offset = 0,                   // смещение нумерации (для списков с заголовками дней)
+  onReachEnd = null,            // доскроллили до конца — можно догрузить следующую страницу
 }) {
   const nav = useNavigate();
   const artistItems = useArtistMenuItems();
@@ -61,6 +62,25 @@ export default function TrackList({
 
   const rowHeight = (DENSITY[ui.density] || DENSITY.normal).row;
   const isVirtual = virtual == null ? tracks.length >= VIRTUAL_FROM : !!virtual;
+
+  /* Сторож для невиртуального списка: показался недалеко от края экрана —
+     зовём onReachEnd. Список виртуальный — сторож не нужен: он скроллится
+     внутри себя, и внешний элемент никогда не пересечётся с областью
+     видимости. Там считаем отрисованные строки (см. VList ниже).
+     Эффект пересоздаётся на каждой новой странице: IntersectionObserver
+     срабатывает только на пересечении границы, а сторож после короткой
+     страницы может остаться стоять на экране. */
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !onReachEnd || isVirtual) return undefined;
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) onReachEnd();
+    }, { rootMargin: '700px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onReachEnd, isVirtual, tracks.length]);
 
   // исключённые треки не показываем (настройка «Скрывать исключённые»)
   const rows = useMemo(() => filterDisliked(tracks), [tracks, dislikedIds, filterDisliked]);
@@ -361,6 +381,7 @@ export default function TrackList({
         {head}
         {selBar}
         {rows.map((t, i) => renderRow(t, i))}
+        {onReachEnd && <div ref={sentinelRef} className="paged-sentinel" aria-hidden="true" />}
       </div>
     );
   }
@@ -377,6 +398,21 @@ export default function TrackList({
         listRef={listRef}
         className="track-rows"
         remeasureKey={`${ui.density}|${ui.scale}|${ui.showTitlebar ? 1 : 0}|${ui.titleH}|${rows.length}`}
+        onRowsRendered={onReachEnd ? (visible, all) => {
+          /* Виртуальный список скроллится внутри себя, поэтому сторож
+             снаружи его не видит: смотрим, какие строки отрисованы.
+             react-window зовёт колбэк с двумя парами индексов — видимые и
+             с запасом (в первой версии библиотеки это был один объект).
+             Запас в 10 строк: страница приезжает до того, как упёрлись
+             в конец. Короткий список не считаем — иначе подгрузка
+             дёргалась бы прямо на первой отрисовке. */
+          if (rows.length < 10) return;
+          const last = Math.max(
+            visible?.stopIndex ?? visible?.visibleStopIndex ?? 0,
+            all?.stopIndex ?? visible?.overscanStopIndex ?? 0,
+          );
+          if (last >= rows.length - 10) onReachEnd();
+        } : undefined}
       />
     </div>
   );

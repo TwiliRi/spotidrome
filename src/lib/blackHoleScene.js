@@ -20,15 +20,18 @@
 
 import {
   TAU, clamp, lerp, approach, easeOutCubic, easeOutBack, mulberry, loadThree,
-  makeArtTexture, makeGlowTexture, makeRingTexture, makeStarTexture,
+  makeArtTexture, makeGlowTexture,
 } from './threeKit';
 import { createPostFX } from './threePost';
+import { createHoleDome, MAX_STEPS } from './holeShader';
 
-const HORIZON = 1.0;        // радиус горизонта
-const DISK_IN = 1.3;        // внутренний край аккреционного диска
-const DISK_OUT = 5.8;
+const MAX_STEPS_HINT = MAX_STEPS;   // потолок шагов интегрирования
+
+const HORIZON = 1.0;        // радиус тени на экране: ровно 3√3/2 радиуса Шварцшильда
+const RS = HORIZON / 2.5981;  // радиус Шварцшильда в мировых единицах
+const DISK_IN = 3.0 * RS;     // ISCO — последняя устойчивая круговая орбита
+const DISK_OUT = 15.0 * RS;   // внешний край аккреционного диска
 const COVERS = 34;
-const STARS = 900;
 const R_SPAWN = 1.16;       // откуда вылетает обложка
 const R_MAX = 10.5;         // где растворяется
 const FADE_EDGE = 2.6;      // ширина зоны растворения у внешнего края
@@ -37,47 +40,9 @@ const VR_IN = 4.2;          // скорость всасывания
 const HERO = 1.95;          // размер обложки-героя в мире
 const ARTS = 8;
 
-/** Аккреционный диск: набор дуг, ярких у внутреннего края. Без единой картинки. */
-function makeDiskTexture(THREE, px, seed, hue) {
-  const rnd = mulberry(seed);
-  const c = document.createElement('canvas');
-  c.width = c.height = px;
-  const o = c.getContext('2d');
-  const half = px / 2;
-
-  o.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 1100; i++) {
-    const t = rnd() ** 0.62;                            // 0 — внутренний край, 1 — внешний
-    const r = half * (0.18 + 0.82 * t);
-    const a0 = rnd() * TAU;
-    const span = 0.04 + rnd() * 0.55;
-    const hot = 1 - t;                                  // у горизонта горячее и ярче
-    o.strokeStyle = `hsla(${hue + (rnd() * 46 - 23)} ${22 + hot * 62}% ${44 + hot * 42}% / ${0.04 + hot * 0.34 * rnd()})`;
-    o.lineWidth = px * (0.003 + rnd() * 0.016) * (0.45 + t);
-    o.beginPath();
-    o.arc(half, half, r, a0, a0 + span);
-    o.stroke();
-  }
-
-  /* Маска: внутри — дыра под горизонт, снаружи — мягкий выход в пустоту.
-     Кольцо геометрии начинается с DISK_IN, поэтому всё, что нарисовано ближе
-     0.23 радиуса текстуры, всё равно не видно — там и держим чёрное. */
-  o.globalCompositeOperation = 'destination-in';
-  const g = o.createRadialGradient(half, half, 0, half, half, half);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(0.2, 'rgba(0,0,0,0)');
-  g.addColorStop(0.27, 'rgba(0,0,0,1)');
-  g.addColorStop(0.55, 'rgba(0,0,0,.92)');
-  g.addColorStop(0.86, 'rgba(0,0,0,.35)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  o.fillStyle = g;
-  o.fillRect(0, 0, px, px);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
+/* Рисованного диска больше нет: аккреционный диск, его температуру,
+   релятивистский набор и линзирование считает шейдер (src/lib/holeShader.js) —
+   там это честная геодезика фотона, а не дуги на canvas. */
 
 export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) {
   const THREE = await loadThree();
@@ -93,7 +58,7 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
   if (!renderer.getContext()) return null;
 
   // сцена вся из аддитивных слоёв — на 2× dpr заливка дороже, чем польза
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.9);
   renderer.setPixelRatio(dpr);
   renderer.setClearColor(0x000000, 0);
 
@@ -104,9 +69,29 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
   /* Постобработка: линзирование, свечение, тональная компрессия.
      Обложку-героя рисуем отдельным проходом поверх — она не должна
      искажаться линзой: иначе DOM-элемент подхватит её не там, где видно. */
-  const post = createPostFX(THREE, renderer, { strength: 0.9, bloom: 1.0, threshold: 0.38, ring: 0.55 });
+  /* Линзирование и кольцо Эйнштейна теперь считает сама дыра, поэтому здесь
+     остаются свечение, лёгкая аберрация и тональная компрессия; изгиб экрана
+     оставлен совсем небольшим — он добавляет «гравитации» обложкам. */
+  const post = createPostFX(THREE, renderer, { strength: 0.16, bloom: 1.2, threshold: 0.5, ring: 0 });
   const heroScene = new THREE.Scene();
   const dbSize = new THREE.Vector2();
+
+  /* Качество подстраивается по факту: шаг интегрирования урезается первым,
+     разрешение — только если и это не помогло. Слабая машина получит дыру
+     чуть грубее, но без просадок; сильная — все 160 шагов и полный dpr. */
+  const P = { acc: 0, n: 0, steps: 112, scale: 1, base: dpr, last: 0, locked: false };
+  /** Ручная установка качества: для слабых машин и для прогонов на CPU,
+      где считает SwiftShader и каждый кадр идёт секунды. */
+  function setQuality({ steps, scale } = {}) {
+    if (steps) { P.steps = Math.max(32, Math.min(MAX_STEPS_HINT, Math.round(steps))); P.locked = true; }
+    if (scale) { P.scale = Math.max(0.4, Math.min(1, scale)); P.locked = true; applyScale(); }
+  }
+  function applyScale() {
+    renderer.setPixelRatio(P.base * P.scale);
+    renderer.setSize(S.w || 1, S.h || 1, false);
+    renderer.getDrawingBufferSize(dbSize);
+    post.setSize(dbSize.x, dbSize.y);
+  }
 
   const accentColor = new THREE.Color(accent);
   const hotColor = new THREE.Color('#ffb066');           // раскалённый внутренний край
@@ -116,81 +101,29 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
      Она пишет глубину, поэтому диск и обложки за дырой честно пропадают —
      силуэт получается сам, без единой строчки шейдера. */
   const holeGeo = new THREE.SphereGeometry(HORIZON, 48, 32);
-  const holeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  /* Только глубина, без цвета: чёрное внутри тени рисует шейдер, а сфера
+     нужна, чтобы спрятать обложки, оказавшиеся за дырой. */
+  const holeMat = new THREE.MeshBasicMaterial({ colorWrite: false });
   const hole = new THREE.Mesh(holeGeo, holeMat);
   scene.add(hole);
 
-  /* ---------- всё, что всегда смотрит на камеру ---------- */
-  const billboard = new THREE.Group();
-  scene.add(billboard);
-
-  const haloMat = new THREE.MeshBasicMaterial({
-    map: makeGlowTexture(THREE, 256, [
-      [0, 'rgba(255,240,214,.55)'], [0.22, 'rgba(255,196,120,.30)'],
-      [0.5, 'rgba(255,150,90,.10)'], [1, 'rgba(255,120,60,0)'],
-    ]),
-    transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending,
+  /* ---------- сама чёрная дыра: шейдер на весь кадр ----------
+     Он рисуется первым (renderOrder −1000) и не пишет глубину, поэтому
+     всё остальное — обложки, вспышки — живёт поверх него как обычно. */
+  const dome = createHoleDome(THREE, {
+    rs: RS,
+    diskIn: DISK_IN / RS,      // шейдер считает в радиусах Шварцшильда
+    diskOut: DISK_OUT / RS,
+    esc: 22,
+    temp: 9200,
+    bright: 0.62,
+    diskAlpha: 0.88,
+    ring: 0.5,
+    halo: 0.24,
+    stars: 1.7,
+    steps: 112,
   });
-  const halo = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 7.2), haloMat);
-  halo.position.z = -0.35;
-  billboard.add(halo);
-
-  // тонкая «фотонная сфера» — то самое кольцо вокруг чёрного круга
-  const photonMat = new THREE.MeshBasicMaterial({
-    map: makeRingTexture(THREE, 256, 34),
-    transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const photon = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 3.1), photonMat);
-  billboard.add(photon);
-
-  // дуга: свет диска, пригнутый гравитацией над горизонтом
-  const arcMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#ffd9a0'), transparent: true, opacity: 0.35,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const arc = new THREE.Mesh(new THREE.TorusGeometry(1.44, 0.045, 6, 120, Math.PI * 1.15), arcMat);
-  arc.rotation.z = Math.PI * 0.42;
-  billboard.add(arc);
-
-  /* ---------- аккреционный диск ---------- */
-  const diskMat = new THREE.MeshBasicMaterial({
-    map: makeDiskTexture(THREE, 512, 20250911, 26),
-    color: hotColor, transparent: true, opacity: 0.55,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
-  const disk = new THREE.Mesh(new THREE.RingGeometry(DISK_IN, DISK_OUT, 160, 1), diskMat);
-  disk.rotation.x = -Math.PI / 2;
-  scene.add(disk);
-
-  const disk2Mat = new THREE.MeshBasicMaterial({
-    map: makeDiskTexture(THREE, 512, 7717, 212),
-    color: new THREE.Color('#6ea8ff'), transparent: true, opacity: 0.2,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
-  const disk2 = new THREE.Mesh(new THREE.RingGeometry(DISK_IN * 1.25, DISK_OUT * 1.55, 128, 1), disk2Mat);
-  disk2.rotation.x = -Math.PI / 2;
-  disk2.rotation.y = 0.2;
-  scene.add(disk2);
-
-  /* ---------- звёзды: увлечение пространства вращением дыры ---------- */
-  const starGeo = new THREE.BufferGeometry();
-  const starPos = new Float32Array(STARS * 3);
-  const srnd = mulberry(31337);
-  for (let i = 0; i < STARS; i++) {
-    const a = srnd() * TAU;
-    const b = Math.acos(srnd() * 2 - 1);
-    const r = 16 + srnd() * 42;
-    starPos[i * 3] = Math.sin(b) * Math.cos(a) * r;
-    starPos[i * 3 + 1] = Math.cos(b) * r * 0.7;
-    starPos[i * 3 + 2] = Math.sin(b) * Math.sin(a) * r;
-  }
-  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  const starMat = new THREE.PointsMaterial({
-    size: 0.4, map: makeStarTexture(THREE), transparent: true, opacity: 0.85,
-    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
-  });
-  const stars = new THREE.Points(starGeo, starMat);
-  scene.add(stars);
+  scene.add(dome.mesh);
 
   /* ---------- обложки ---------- */
   const artTextures = Array.from({ length: ARTS }, (_, i) => makeArtTexture(THREE, 256, 5000 + i * 733));
@@ -304,7 +237,7 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
     bt: 0,                   // время в «балансе»: по нему дыра дышит
     final: false,            // засасывание уже окончательное — обратно не выплюнет
     heroT: 0, coverTex: null, accentColor,
-    w: 1, h: 1, frames: 0, swallowed: 0, calls: 0, tris: 0,
+    w: 1, h: 1, frames: 0, swallowed: 0, calls: 0, tris: 0, ms: 0,
   };
 
   const tmpA = new THREE.Vector3();
@@ -475,6 +408,32 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
     S.pt += dt;
     S.frames += 1;
 
+    /* Реальная длительность кадра: dt сверху обрезан, а нам нужно знать,
+       успевает ли машина. Решение принимаем по 20 кадрам, чтобы не дёргаться. */
+    const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (P.last) {
+      P.acc += nowMs - P.last;
+      P.n += 1;
+      if (!P.locked && P.n >= 6) {
+        const avg = P.acc / P.n;
+        P.acc = 0;
+        P.n = 0;
+        if (avg > 70) {
+          /* Совсем плохо (меньше 16 кадров в секунду): режем сразу и сильно,
+             иначе машина утонет раньше, чем качество подберётся. */
+          P.steps = Math.max(64, P.steps - 32);
+          if (P.steps <= 64 && P.scale > 0.68) { P.scale = Math.max(0.68, P.scale - 0.16); applyScale(); }
+        } else if (avg > 30 && (P.steps > 64 || P.scale > 0.72)) {
+          if (P.steps > 64) P.steps -= 16;
+          else { P.scale = Math.max(0.72, P.scale - 0.1); applyScale(); }
+        } else if (avg < 16 && (P.steps < 160 || P.scale < 1)) {
+          if (P.scale < 1) { P.scale = Math.min(1, P.scale + 0.12); applyScale(); }
+          else P.steps = Math.min(160, P.steps + 12);
+        }
+      }
+    }
+    P.last = nowMs;
+
     /* ---------- куда дует поток и где стоит камера ---------- */
     let tf = 0.1, td = 9.6, tfov = 58, torbit = 0.05;
     if (S.phase === 'idle') { tf = 0.1; td = 9.6; tfov = 58; torbit = 0.05; }
@@ -498,37 +457,38 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
     S.fov = approach(S.fov, tfov, 2.2, dt);
     S.orbit += torbit * dt;
 
-    const bob = Math.sin(S.t * 0.5) * 0.06;
+    /* Наклон к плоскости диска дышит: композиция не стоит на месте — то диск
+       видно почти с ребра, то он слегка раскрывается. Плюс неспешный крен. */
+    const tilt = 0.082 + 0.085 * Math.sin(S.t * 0.21) + S.feed * 0.045;
+    const bob = Math.sin(S.t * 0.5) * 0.05;
     camera.position.set(
-      Math.sin(S.orbit) * S.dist,
-      1.45 + bob + S.feed * 0.25,
-      Math.cos(S.orbit) * S.dist,
+      Math.sin(S.orbit) * S.dist * Math.cos(tilt),
+      S.dist * Math.sin(tilt) + bob,
+      Math.cos(S.orbit) * S.dist * Math.cos(tilt),
     );
     camera.lookAt(0, 0, 0);
-    camera.rotation.z += Math.sin(S.t * 0.43) * 0.012;      // еле заметный крен
+    camera.rotation.z += Math.sin(S.t * 0.43) * 0.034 + Math.sin(S.t * 0.17) * 0.022;
     camera.fov = S.fov;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();                              // обложкам нужна актуальная матрица
-    billboard.quaternion.copy(camera.quaternion);
 
-    /* ---------- дыра и диск ---------- */
-    disk.rotation.z -= dt * (0.55 + S.feed * 0.9);
-    disk2.rotation.z += dt * (0.3 + S.feed * 0.5);
-    diskMat.opacity = 0.62 + S.feed * 0.3;
-    diskMat.color.copy(hotColor).lerp(S.accentColor, S.feed * 0.45);
-    disk2Mat.opacity = 0.24 + S.feed * 0.24;
-
-    const pulse = 1 + Math.sin(S.t * 1.7) * 0.02;
-    photon.scale.setScalar((1 + S.feed * 0.1) * pulse);
-    photonMat.opacity = 0.75 + S.feed * 0.25;
-    halo.scale.setScalar((1 + S.feed * 0.3) * (1 + Math.sin(S.t * 0.9) * 0.02));
-    haloMat.opacity = 0.18 + S.feed * 0.24;
-    arc.rotation.z += dt * (0.35 + S.feed * 0.8);
-    arcMat.opacity = 0.3 + S.feed * 0.4;
-
-    // пространство вокруг увлечено вращением: при всасывании звёзды плывут быстрее
-    stars.rotation.y += dt * (0.015 + Math.abs(S.flow) * 0.05 + S.feed * 0.12);
-    starMat.opacity = 0.85 * (1 - S.feed * 0.25);
+    /* ---------- дыра: шейдеру — всё, что знает сцена ---------- */
+    const u = dome.uniforms;
+    const heroT = clamp(S.heroT / 0.8, 0, 1);
+    u.uTime.value = S.t;
+    u.uSpin.value = 4.2 + S.feed * 2.6;              // при всасывании диск крутится злее
+    u.uFeed.value = S.feed;
+    u.uHeroT.value = heroT;
+    u.uAccent.value.copy(S.accentColor);
+    u.uCamRot.value.setFromMatrix4(camera.matrixWorld);
+    u.uTanHalf.value = Math.tan((camera.fov * Math.PI) / 360);
+    u.uAspect.value = camera.aspect;
+    u.uTemp.value = 9200 + S.feed * 1900;            // и горячее
+    u.uBright.value = 0.62 * (1 + S.feed * 0.5 + heroT * 0.35);
+    u.uJet.value = 0.55 * (1 + S.feed * 0.8 + heroT * 1.1);
+    u.uRing.value = 0.5 * (1 + S.feed * 0.45);
+    u.uHalo.value = 0.24 * (1 + S.feed * 0.6);
+    u.uSteps.value = P.steps;
 
     updateCovers(dt);
     updateFlashes(dt);
@@ -574,11 +534,7 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
   function dispose() {
     holeGeo.dispose();
     holeMat.dispose();
-    [halo, photon, arc].forEach((m) => { m.geometry.dispose(); m.material.map?.dispose(); m.material.dispose(); });
-    [disk, disk2].forEach((m) => { m.geometry.dispose(); m.material.map?.dispose(); m.material.dispose(); });
-    starGeo.dispose();
-    starMat.map?.dispose();
-    starMat.dispose();
+    dome.dispose();
     coverGeo.dispose();
     covers.forEach((c) => c.mat.dispose());
     artTextures.forEach((t) => t.dispose());
@@ -612,6 +568,8 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
       live,
       swallowed: S.swallowed,
       hero: Number(S.heroT.toFixed(2)),
+      steps: P.steps,                    // шагов интегрирования на кадр
+      scale: P.scale,                    // во сколько раз урезано разрешение
       art: realTextures.length,          // настоящих обложек в пуле
       pool: artPool.length,
     };
@@ -619,5 +577,5 @@ export async function createBlackHoleScene(canvas, { accent = '#1db954' } = {}) 
 
   resize();
   setAccent(accent);
-  return { render, resize, setPhase, setCover, setAccent, addArt, coverRect, dispose, stats };
+  return { render, resize, setQuality, setPhase, setCover, setAccent, addArt, coverRect, dispose, stats };
 }

@@ -46,6 +46,13 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
   await page.waitForSelector('.bh-overlay', { timeout: 5000 });
   ok('оверлей «Чёрной дыры» появился', true);
 
+  /* Здесь проверяется хореография, а не картинка (за неё отвечает раздел 2),
+     а считает в headless центральный процессор: SwiftShader не успевает за
+     настенными часами, и очередь кадров начинает морить голодом rAF стора —
+     бросок застревает в фазе «top». Поэтому качество урезаем вручную. */
+  await page.waitForFunction(() => !!window.__blackhole, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__blackhole?.setQuality?.({ steps: 48, scale: 0.5 }));
+
   /* Сэмплируем с первой же секунды: сцена поднимается асинхронно (three.js
      приезжает отдельным чанком), а выброс начинается сразу после idle. */
   const flows = [];
@@ -62,10 +69,18 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
     const row = await page.evaluate(() => {
       const s = window.__store.getState();
       const sc = window.__blackhole;
-      /* В headless постобработка рисуется программно — кадр идёт секунды, и
-         сцена отставала бы от таймеров фаз в разы. Подталкиваем её время сами,
-         чтобы проверка смотрела хореографию, а не скорость этого компьютера. */
-      if (sc) sc.render(0.2);
+      /* В headless сцена считается на CPU (SwiftShader) — кадр идёт секунды,
+         и она отставала бы от таймеров фаз в разы. Подталкиваем её время сами,
+         но не каждый опрос: иначе очередь кадров вырастет так, что следующие
+         проверки будут ждать её часами. */
+      const t = Date.now();
+      if (sc && !window.__q) { window.__q = 1; sc.setQuality({ steps: 48, scale: 0.5 }); }
+      if (sc && t - (window.__push || 0) > 250) {
+        window.__push = t;
+        /* У самого нуля время ведём мельче: с крупным шагом поток проскакивает
+           окно |flow| < 0.25 между сэмплами, и плавность разворота пропадает. */
+        sc.render(Math.abs(sc.stats().flow) < 0.7 ? 0.06 : 0.2);
+      }
       const r = sc?.coverRect?.() || null;
       return {
         ph: s.dice?.phase || null,
@@ -124,17 +139,22 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
   await page.evaluate(() => window.__store.getState().updateSettings({ rollAnim: 'blackhole' }));
   let art = 0;
 
+  /* Разрешение режем, шаги — нет: снимок должен успеть за фазой, а картинка
+     обязана остаться настоящей (все проходы геодезики, весь диск). */
+
   /* Снимаем по одной фазе за бросок и перепроверяем фазу после снимка: если
      она успела уйти в expand, кадр уже гаснет и судить по нему нельзя. */
   const shoot = async (want) => {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       // предыдущий бросок должен полностью отпустить стор
       await page.waitForFunction(
         () => !window.__store.getState().randomBusy && !window.__store.getState().dice,
-        null, { timeout: 20000 },
+        null, { timeout: 20000, polling: 250 },
       ).catch(() => {});
       await page.evaluate(() => { window.__store.getState().rollDice(); });
       await page.waitForSelector('.bh-canvas', { timeout: 8000 }).catch(() => {});
+      await page.waitForFunction(() => !!window.__blackhole, null, { timeout: 20000 }).catch(() => {});
+      await page.evaluate(() => window.__blackhole?.setQuality?.({ scale: 0.55 }));
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
         // eslint-disable-next-line no-await-in-loop
@@ -195,21 +215,33 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
   // «сервер думает» полминуты: бросок гарантированно уйдёт в баланс и останется там
   await page.evaluate(() => {
     const orig = window.__api.getRandomSongs.bind(window.__api);
-    window.__api.getRandomSongs = (...a) => orig(...a).then((s) => new Promise((r) => setTimeout(() => r(s), 30000)));
+    window.__api.getRandomSongs = (...a) => orig(...a).then((s) => new Promise((r) => setTimeout(() => r(s), 60000)));
   });
   await page.evaluate(() => { window.__store.getState().rollDice(); });
-  const balance = await page.waitForFunction(() => window.__store.getState().dice?.phase === 'balance', null, { timeout: 20000 })
+  /* Опрос по таймеру, а не по rAF, и большой запас по времени: в headless
+     сцена считается на двух ядрах, кадр идёт секунды, и фазы стора едут
+     в разы медленнее настенных часов (ожидание наступало на 17-й секунде). */
+  const balance = await page.waitForFunction(() => window.__store.getState().dice?.phase === 'balance', null, { timeout: 60000, polling: 250 })
     .then(() => true).catch(() => false);
   ok('бросок дошёл до фазы ожидания', balance);
 
   /* Время сцены ведём сами: в headless постобработка рисуется программно и
      кадр идёт секунды, поэтому на настенные часы опираться нельзя. */
+  /* Тоже урезаем качество: 26 кадров на SwiftShader иначе растягиваются на
+     полминуты — мок уже успевает отпустить «сервер», и выборка захватывает
+     конец броска, а не дыхание. */
+  await page.waitForFunction(() => !!window.__blackhole, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__blackhole?.setQuality?.({ steps: 48, scale: 0.5 }));
+
   const samples = [];
   for (let i = 0; i < 26; i++) {
     // eslint-disable-next-line no-await-in-loop
     const f = await page.evaluate(() => {
       const sc = window.__blackhole;
       if (!sc) return null;
+      // урезаем при первом живом кадре: сцена поднимается асинхронно, и ждать её
+      // снаружи — значит рисковать, что подстройка опоздает к первому сэмплу
+      if (!window.__q) { window.__q = 1; sc.setQuality({ steps: 48, scale: 0.5 }); }
       sc.render(0.35);
       return sc.stats().flow;
     });
@@ -227,7 +259,8 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
   });
   ok('в ожидании обложки вылетают', up > 0.3, `максимум ${up}`);
   ok('и затягиваются обратно — без смены фазы', down < -0.3, `минимум ${down}`);
-  ok('поток ходит туда-обратно, а не залипает', turns >= 2, `смен знака: ${turns}`);
+  ok('поток ходит туда-обратно, а не залипает', turns >= 2,
+    `смен знака: ${turns}; выборка (${samples.length}): ${samples.map((v) => v.toFixed(2)).join(' ')}`);
   ok('дыхание дыры без ошибок', problems.length === 0, problems.slice(0, 3).join(' | '));
   await page.close();
 }
@@ -241,7 +274,7 @@ async function open({ blockWebGL = false, viewport = { width: 1440, height: 900 
   const kind = await page.evaluate(() => (document.querySelector('.bh-overlay') ? 'blackhole'
     : document.querySelector('.rv-overlay') ? 'vinyl' : 'none'));
   ok('без WebGL включилась запасная анимация', kind === 'vinyl', kind);
-  const finished = await page.waitForFunction(() => window.__store.getState().dice === null, null, { timeout: 25000 })
+  const finished = await page.waitForFunction(() => window.__store.getState().dice === null, null, { timeout: 25000, polling: 250 })
     .then(() => true).catch(() => false);
   ok('бросок всё равно доигран до конца', finished);
   ok('без WebGL тоже без ошибок', problems.length === 0, problems.slice(0, 4).join(' | '));

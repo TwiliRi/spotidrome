@@ -290,8 +290,8 @@ class SubsonicClient {
 
   async deletePlaylist(id) { return this.call('deletePlaylist', { id }); }
 
-  async search(query, { songCount = 40, albumCount = 20, artistCount = 20 } = {}) {
-    const r = await this.call('search3', { query, songCount, albumCount, artistCount });
+  async search(query, { songCount = 40, albumCount = 20, artistCount = 20, songOffset = 0 } = {}) {
+    const r = await this.call('search3', { query, songCount, albumCount, artistCount, songOffset });
     return {
       artists: arr(r.searchResult3?.artist),
       albums: arr(r.searchResult3?.album),
@@ -334,8 +334,8 @@ class SubsonicClient {
 
   async getGenres() { const r = await this.call('getGenres'); return arr(r.genres?.genre); }
 
-  async getSongsByGenre(genre, count = 60) {
-    const r = await this.call('getSongsByGenre', { genre, count });
+  async getSongsByGenre(genre, count = 60, offset = 0) {
+    const r = await this.call('getSongsByGenre', { genre, count, offset });
     return arr(r.songsByGenre?.song);
   }
 
@@ -490,7 +490,8 @@ class SubsonicClient {
         return wrap({ searchResult3: {
           artist: artists.filter((a) => a.name.toLowerCase().includes(q)).slice(0, p.artistCount),
           album: albums.filter((a) => (a.name + a.artist).toLowerCase().includes(q)).slice(0, p.albumCount),
-          song: songs.filter((s) => (s.title + s.artist + s.album).toLowerCase().includes(q)).slice(0, p.songCount),
+          song: songs.filter((s) => (s.title + s.artist + s.album).toLowerCase().includes(q))
+            .slice(p.songOffset || 0, (p.songOffset || 0) + (p.songCount || 40)),
         } });
       }
       case 'getStarred2': return wrap({ starred2: {
@@ -509,7 +510,11 @@ class SubsonicClient {
         songs.forEach((s) => { g[s.genre] = (g[s.genre] || 0) + 1; });
         return wrap({ genres: { genre: Object.entries(g).map(([value, songCount]) => ({ value, songCount })) } });
       }
-      case 'getSongsByGenre': return wrap({ songsByGenre: { song: songs.filter((s) => s.genre === p.genre).slice(0, p.count) } });
+      case 'getSongsByGenre': {
+        const list = songs.filter((s) => s.genre === p.genre);
+        const from = p.offset || 0;
+        return wrap({ songsByGenre: { song: list.slice(from, from + (p.count || 60)) } });
+      }
       case 'getLyricsBySongId': {
         const song = byId(p.id);
         // раскладываем строки по фактической длительности трека — как настоящий .lrc

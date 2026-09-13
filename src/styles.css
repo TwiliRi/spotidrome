@@ -1989,3 +1989,13 @@ body.resizing-x .app, body.resizing-y .app { transition: none; }
 /* пять режимов анимации в одной строке с подписью не влезают — кладём отдельно */
 .modal .row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
 .modal .row.stack .seg { flex-wrap: wrap; justify-content: flex-start; }
+
+/* ============= автоматическая подгрузка списков =============
+   Сторож стоит в конце списка: как только он показался недалеко от края
+   экрана, догружается следующая страница. Сам он невидим и на разметку
+   не влияет — просто точка, за которой наблюдает IntersectionObserver. */
+.paged-sentinel { height: 1px; margin-top: 8px; }
+.paged-more, .paged-end {
+  text-align: center; font-size: 13px; padding: 14px 0 34px;
+}
+.paged-more { opacity: .75; }

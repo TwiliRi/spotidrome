@@ -3,6 +3,7 @@ import useStore from '../state/store';
 import { useCoverSrc } from '../lib/covers';
 import { useDominantColor } from '../lib/util';
 import { createDiceEngine, setDiceMode, stepDice } from '../lib/diceEngine';
+import { flyToPlayer } from '../lib/rollHandoff';
 
 /* Раскладка точек на гранях (позиции в сетке 3×3) */
 const PIPS = {
@@ -124,39 +125,28 @@ export default function DiceRoll() {
     const el = flyRef.current;
     if (!el) return undefined;
 
-    let raf2 = 0;
-    const raf = requestAnimationFrame(() => {
-      const from = el.getBoundingClientRect();
-      const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
-      if (!to || !from.width) {
-        document.body.classList.remove('dice-prep', 'dice-handoff');
-        return;
-      }
+    // стартуем оттуда, где картинка уже стоит (верхняя грань кубика), но
+    // фиксируем это место явно: дальше ею управляет WAAPI-анимация
+    const from = el.getBoundingClientRect();
+    const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
+    const anim = flyToPlayer(el, from, to, { fromRadius: '16%', midRadius: null, toRadius: '14px', duration: 640 });
 
-      const scale = to.width / from.width;
-      const dx = (to.left + to.width / 2) - (from.left + from.width / 2);
-      const dy = (to.top + to.height / 2) - (from.top + from.height / 2);
+    if (!anim) {   // лететь некуда — просто отдаём плеер, без висящей картинки
+      el.style.display = 'none';
+      document.body.classList.remove('dice-prep', 'dice-handoff');
+      return undefined;
+    }
 
-      const anim = el.animate(
-        [
-          { transform: 'translate(0px, 0px) scale(1)', borderRadius: '16%' },
-          { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, borderRadius: '14px' },
-        ],
-        { duration: 640, easing: 'cubic-bezier(.22,1,.28,1)', fill: 'forwards' },
-      );
+    const raf = requestAnimationFrame(() => document.body.classList.remove('dice-prep'));
 
-      raf2 = requestAnimationFrame(() => document.body.classList.remove('dice-prep'));
-
-      anim.onfinish = () => {
-        document.body.classList.remove('dice-handoff');
-        el.style.transition = 'opacity .2s linear';
-        el.style.opacity = '0';
-      };
-    });
+    anim.onfinish = () => {
+      document.body.classList.remove('dice-handoff');
+      el.style.transition = 'opacity .2s linear';
+      el.style.opacity = '0';
+    };
 
     return () => {
       cancelAnimationFrame(raf);
-      cancelAnimationFrame(raf2);
       document.body.classList.remove('dice-prep', 'dice-handoff');
     };
   }, [dice?.phase]);

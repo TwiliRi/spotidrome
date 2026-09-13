@@ -102,6 +102,14 @@ void main() {
   alpha = clamp(alpha + ring * uRing * 0.85, 0.0, 1.0);
 
   col = aces(col * uExposure);
+
+  /* Киноплёнка: тени уходят в холодный, света — в тёплый, сверху лёгкая
+     S-кривая по контрасту. Без этого кадр выглядит «картинкой», а не снятым
+     материалом: ровный серый градиент — первая примета дешёвого рендера. */
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col *= mix(vec3(0.93, 0.98, 1.17), vec3(1.07, 1.0, 0.93), smoothstep(0.04, 0.6, l));
+  col = mix(col, col * col * (3.0 - 2.0 * col), 0.18);
+
   gl_FragColor = vec4(col * alpha, alpha);                 // холст ждёт premultiplied
   #include <colorspace_fragment>
 }`;

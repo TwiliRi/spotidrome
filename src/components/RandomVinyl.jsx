@@ -3,6 +3,7 @@ import useStore from '../state/store';
 import { useCoverSrc } from '../lib/covers';
 import { useDominantColor } from '../lib/util';
 import { createVinylScene } from '../lib/vinylScene';
+import { flyToPlayer } from '../lib/rollHandoff';
 
 /**
  * Анимация случайного трека «ставим пластинку».
@@ -98,41 +99,25 @@ export default function RandomVinyl() {
     if (!el || !scene) return undefined;
 
     const from = scene.labelRect();
-    el.style.left = `${from.x}px`;
-    el.style.top = `${from.y}px`;
-    el.style.width = `${from.w}px`;
-    el.style.height = `${from.h}px`;
+    const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
+    const anim = flyToPlayer(el, from, to, { fromRadius: '50%', midRadius: '22%', toRadius: '4%' });
 
-    let raf2 = 0;
-    const raf = requestAnimationFrame(() => {
-      const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
-      if (!to || !from.w) { document.body.classList.remove('roll-prep', 'roll-handoff'); return; }
+    if (!anim) {   // лететь некуда — просто отдаём плеер, без висящей картинки
+      el.style.display = 'none';
+      document.body.classList.remove('roll-prep', 'roll-handoff');
+      return undefined;
+    }
 
-      const scale = to.width / from.w;
-      const dx = (to.left + to.width / 2) - (from.x + from.w / 2);
-      const dy = (to.top + to.height / 2) - (from.y + from.h / 2);
+    // плеер проявляем следующим кадром после старта — перелёт идёт уже поверх него
+    const raf2 = requestAnimationFrame(() => document.body.classList.remove('roll-prep'));
 
-      const anim = el.animate(
-        [
-          { transform: 'translate(0px, 0px) scale(1)', borderRadius: '50%' },
-          { transform: `translate(${dx * 0.5}px, ${dy * 0.5}px) scale(${(1 + scale) / 2})`, borderRadius: '22%', offset: 0.5 },
-          { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, borderRadius: '4%' },
-        ],
-        { duration: 660, easing: 'cubic-bezier(.22,1,.28,1)', fill: 'forwards' },
-      );
-
-      // плеер проявляем следующим кадром после старта — перелёт идёт уже поверх него
-      raf2 = requestAnimationFrame(() => document.body.classList.remove('roll-prep'));
-
-      anim.onfinish = () => {
-        document.body.classList.remove('roll-handoff');
-        el.style.transition = 'opacity .2s linear';
-        el.style.opacity = '0';
-      };
-    });
+    anim.onfinish = () => {
+      document.body.classList.remove('roll-handoff');
+      el.style.transition = 'opacity .2s linear';
+      el.style.opacity = '0';
+    };
 
     return () => {
-      cancelAnimationFrame(raf);
       cancelAnimationFrame(raf2);
       document.body.classList.remove('roll-prep', 'roll-handoff');
     };

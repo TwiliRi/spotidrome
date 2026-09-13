@@ -35,7 +35,9 @@
     "test:uifixes:ui": "node tools/e2e-ui-fixes.mjs",
     "test:cosmos:ui": "node tools/e2e-cosmos.mjs",
     "test:folders:ui": "node tools/e2e-folders.mjs",
-    "test:blackhole:ui": "node tools/e2e-blackhole.mjs"
+    "test:blackhole:ui": "node tools/e2e-blackhole.mjs",
+    "test:paging:ui": "node tools/e2e-paging.mjs",
+    "test:rollfly:ui": "node tools/e2e-rollfly.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

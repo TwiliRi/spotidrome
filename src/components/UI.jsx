@@ -157,6 +157,7 @@ export function Card({ item, kind = 'album', onPlay, onContextMenu, sub: subOver
       role="button"
       tabIndex={0}
       title={item.name || item.title}
+      data-id={item.id}
       {...(drag || {})}
     >
       <div className="art-wrap">

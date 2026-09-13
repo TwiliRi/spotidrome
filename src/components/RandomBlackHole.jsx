@@ -5,6 +5,7 @@ import { useDominantColor } from '../lib/util';
 import { createBlackHoleScene } from '../lib/blackHoleScene';
 import { hasWebGL, prewarmThree } from '../lib/threeKit';
 import { loadRollArt } from '../lib/rollArt';
+import { flyToPlayer } from '../lib/rollHandoff';
 
 /**
  * Анимация случайного трека «Чёрная дыра»: сначала дыра выплёвывает обложки,
@@ -180,37 +181,28 @@ export default function RandomBlackHole() {
     const scene = sceneRef.current;
     if (!el || !scene) return undefined;
 
-    let raf2 = 0;
-    const raf = requestAnimationFrame(() => {
-      const from = scene.coverRect();
-      const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
-      if (!from || !to || !from.w) { document.body.classList.remove('roll-prep', 'roll-handoff'); return; }
+    // стартовая точка — место обложки в сцене: картинку надо именно туда
+    // поставить, иначе она останется в углу оверлея и улетит за край экрана
+    const from = scene.coverRect();
+    const to = targetRef.current || document.querySelector('.np2-cover')?.getBoundingClientRect();
+    const anim = flyToPlayer(el, from, to, { fromRadius: '4%', midRadius: '8%', toRadius: '14px' });
 
-      const scale = to.width / from.w;
-      const dx = (to.left + to.width / 2) - (from.x + from.w / 2);
-      const dy = (to.top + to.height / 2) - (from.y + from.h / 2);
+    if (!anim) {   // лететь некуда — просто отдаём плеер, без висящей картинки
+      el.style.display = 'none';
+      document.body.classList.remove('roll-prep', 'roll-handoff');
+      return undefined;
+    }
 
-      const anim = el.animate(
-        [
-          { transform: 'translate(0px, 0px) scale(1)', borderRadius: '4%' },
-          { transform: `translate(${dx * 0.5}px, ${dy * 0.5}px) scale(${(1 + scale) / 2})`, borderRadius: '8%', offset: 0.5 },
-          { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, borderRadius: '14px' },
-        ],
-        { duration: 660, easing: 'cubic-bezier(.22,1,.28,1)', fill: 'forwards' },
-      );
+    // плеер проявляем следующим кадром после старта — перелёт идёт уже поверх него
+    const raf2 = requestAnimationFrame(() => document.body.classList.remove('roll-prep'));
 
-      // плеер проявляем следующим кадром после старта — перелёт идёт уже поверх него
-      raf2 = requestAnimationFrame(() => document.body.classList.remove('roll-prep'));
-
-      anim.onfinish = () => {
-        document.body.classList.remove('roll-handoff');
-        el.style.transition = 'opacity .2s linear';
-        el.style.opacity = '0';
-      };
-    });
+    anim.onfinish = () => {
+      document.body.classList.remove('roll-handoff');
+      el.style.transition = 'opacity .2s linear';
+      el.style.opacity = '0';
+    };
 
     return () => {
-      cancelAnimationFrame(raf);
       cancelAnimationFrame(raf2);
       document.body.classList.remove('roll-prep', 'roll-handoff');
     };

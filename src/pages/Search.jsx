@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import useStore from '../state/store';
@@ -6,6 +6,13 @@ import TrackList from '../components/TrackList';
 import { Card, Cover, Section, Skeletons } from '../components/UI';
 import { Play, Pause, Clock, Close, Trash, Search as SearchIc } from '../components/Icons';
 import { timeAgo, HISTORY_MAX } from '../lib/searchHistory';
+import { songsWord } from '../lib/util';
+
+/* Треков на страницу. Число не случайное: с 60 строк TrackList уходит в
+   виртуальный режим. Если брать меньше, список сначала живет обычным, а на
+   второй странице перестраивается в виртуальный — прокрутка при этом
+   прыгает. Первая порция сразу больше порога — режим не меняется. */
+const SONG_PAGE = 60;
 
 const GENRE_COLORS = ['#e13300', '#8400e7', '#1e3264', '#e8115b', '#148a08', '#ff4632', '#509bf5', '#af2896', '#056952', '#d84000', '#7358ff', '#0d73ec'];
 
@@ -25,19 +32,44 @@ export default function Search() {
   const [res, setRes] = useState(null);
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(false);
+  /* Поиск отдаёт треки порциями: первая приходит вместе с альбомами и
+     исполнителями, остальные догружаем, когда доскроллили до конца списка. */
+  const [songs, setSongs] = useState([]);
+  const [songMore, setSongMore] = useState(false);
+  const [songLoading, setSongLoading] = useState(false);
+
 
   useEffect(() => { setUI({ heroColor: '#121212', pageTitle: 'Поиск' }); }, [setUI]);
   useEffect(() => { api.getGenres().then(setGenres).catch(() => {}); }, []);
 
   useEffect(() => {
-    if (!q.trim()) { setRes(null); return; }
+    if (!q.trim()) { setRes(null); setSongs([]); setSongMore(false); return; }
     let alive = true;
     setLoading(true);
-    api.search(q)
-      .then((r) => { if (alive) { setRes(r); setLoading(false); } })
+    api.search(q, { songCount: SONG_PAGE })
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        setSongs(r.songs);
+        setSongMore(r.songs.length >= SONG_PAGE);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
     return () => { alive = false; };
   }, [q]); // eslint-disable-line
+
+  const loadMoreSongs = useCallback(async () => {
+    if (songLoading || !songMore || !q.trim()) return;
+    setSongLoading(true);
+    try {
+      const r = await api.search(q, { songOffset: songs.length, songCount: SONG_PAGE });
+      const seen = new Set(songs.map((x) => String(x.id)));
+      const fresh = (r.songs || []).filter((x) => !seen.has(String(x.id)));
+      if (fresh.length) setSongs((prev) => [...prev, ...fresh]);
+      if ((r.songs || []).length < SONG_PAGE) setSongMore(false);
+    } catch { setSongMore(false); }
+    setSongLoading(false);
+  }, [q, songs, songMore, songLoading]);
 
   const best = useMemo(() => {
     if (!res) return null;
@@ -48,9 +80,9 @@ export default function Search() {
     if (exactAlbum) return { kind: 'album', item: exactAlbum };
     if (res.artists[0]) return { kind: 'artist', item: res.artists[0] };
     if (res.albums[0]) return { kind: 'album', item: res.albums[0] };
-    if (res.songs[0]) return { kind: 'song', item: res.songs[0] };
+    if (songs[0]) return { kind: 'song', item: songs[0] };
     return null;
-  }, [res, q]);
+  }, [res, songs, q]);
 
   /* пустой ввод: недавние запросы + подборка по жанрам */
   if (!q.trim()) {
@@ -163,10 +195,10 @@ export default function Search() {
           </div>
         )}
 
-        {!!res.songs.length && (
+        {!!songs.length && (
           <div>
             <h2 style={{ fontSize: 22, fontWeight: 800, margin: '8px 0 16px' }}>Треки</h2>
-            <TrackList tracks={res.songs.slice(0, 6)} context={{ type: 'search', name: `Поиск: ${q}` }} showHeader={false} showAlbum={false} numbered={false} />
+            <TrackList tracks={songs.slice(0, 6)} context={{ type: 'search', name: `Поиск: ${q}` }} showHeader={false} showAlbum={false} numbered={false} />
           </div>
         )}
       </div>
@@ -177,8 +209,12 @@ export default function Search() {
       {!!res.artists.length && (
         <Section title="Исполнители"><div className="grid">{res.artists.slice(0, 8).map((a) => <Card key={a.id} item={a} kind="artist" />)}</div></Section>
       )}
-      {res.songs.length > 6 && (
-        <Section title="Все найденные треки"><TrackList tracks={res.songs} context={{ type: 'search', name: `Поиск: ${q}` }} /></Section>
+      {songs.length > 6 && (
+        <Section title="Все найденные треки">
+          <TrackList tracks={songs} context={{ type: 'search', name: `Поиск: ${q}` }} onReachEnd={loadMoreSongs} />
+          {songLoading && <div className="paged-more muted">Загружаю ещё…</div>}
+          {!songMore && !songLoading && <div className="paged-end muted">{songsWord(songs.length)} — это все</div>}
+        </Section>
       )}
     </div>
   );
