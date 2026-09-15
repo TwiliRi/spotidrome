@@ -1,10 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import { Cover } from '../components/UI';
-import { ThumbDownFill, Trash, Play, Check } from '../components/Icons';
+import { ThumbDownFill, Trash, Play, Check, Download } from '../components/Icons';
 import { fmt, songsWord } from '../lib/util';
 import ArtistLinks from '../components/ArtistLinks';
+import { buildPlaylistHtml, collectCovers, pageFileName, coversWord } from '../lib/pageExport';
+import { saveTextFile } from '../lib/saveFile';
 
 export default function Disliked() {
   const nav = useNavigate();
@@ -25,6 +27,38 @@ export default function Disliked() {
 
   const list = Object.values(dislikes).sort((a, b) => (b.at || 0) - (a.at || 0));
   const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+
+  /* Отдельная HTML-страница со списком: обложки вклеиваем в файл, чтобы
+     страница открывалась и без доступа к серверу. */
+  const [share, setShare] = useState({ busy: false, done: 0, total: 0 });
+  const shareAlive = useRef(false);
+  useEffect(() => () => { shareAlive.current = false; }, []);
+
+  const shareHtml = async () => {
+    if (share.busy || !list.length) return;
+    shareAlive.current = true;
+    setShare({ busy: true, done: 0, total: list.length });
+    try {
+      const covers = await collectCovers(list, {
+        alive: () => shareAlive.current,
+        onProgress: (p) => setShare((st) => (st.busy ? { ...st, done: p.done, total: p.total } : st)),
+      });
+      if (!shareAlive.current) { setShare({ busy: false, done: 0, total: 0 }); return; }
+      const rows = list.map((t) => ({ ...t, cover: covers.get(String(t.id)) || null }));
+      const html = buildPlaylistHtml(rows, {
+        title: 'Исключённые треки',
+        note: 'Треки, которые владелец фонотеки исключил из подборок, радио и очереди.',
+      });
+      const file = pageFileName('disliked');
+      const saved = await saveTextFile(file, html, { ext: 'html', title: 'Сохранить страницу' });
+      if (saved.canceled) { setShare({ busy: false, done: 0, total: 0 }); return; }
+      toast(`Страница готова: ${saved.path || file}`, 'success');
+      setShare({ busy: false, done: 0, total: 0, file: saved.path || file });
+    } catch (e) {
+      toast(`Не получилось собрать страницу: ${e?.message || e}`, 'error');
+      setShare({ busy: false, done: 0, total: 0 });
+    }
+  };
 
   return (
     <div>
@@ -55,6 +89,21 @@ export default function Disliked() {
         <button className="pill-btn" onClick={openDislikesFolder} title={dislikesPath || 'localStorage браузера'}>
           Открыть папку
         </button>
+        {!!list.length && (
+          <button
+            className="pill-btn"
+            onClick={shareHtml}
+            disabled={share.busy}
+            title="Отдельная страница в стиле Spotify: можно просто скинуть человеку"
+          >
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Download size={14} />
+              {share.busy
+                ? `Готовлю… ${share.done} из ${share.total} ${coversWord(share.total)}`
+                : 'HTML-страница'}
+            </span>
+          </button>
+        )}
         {!!list.length && (
           <button
             className="pill-btn danger"
@@ -120,7 +169,9 @@ export default function Disliked() {
         )}
 
         <div className="muted" style={{ fontSize: 12, marginTop: 20, lineHeight: 1.6 }}>
-          Список хранится только у вас на компьютере и не отправляется на сервер Navidrome.
+          «HTML-страница» собирает отдельный файл со списком: тёмная страница в духе Spotify,
+          обложки вклеены внутрь, поэтому она открывается у любого человека и без доступа к серверу.
+          Сам список при этом хранится только у вас на компьютере и не отправляется на сервер Navidrome.
           Файл можно править руками, скопировать на другую машину или удалить —
           приложение перечитает его при следующем запуске.
         </div>

@@ -37,7 +37,13 @@
     "test:folders:ui": "node tools/e2e-folders.mjs",
     "test:blackhole:ui": "node tools/e2e-blackhole.mjs",
     "test:paging:ui": "node tools/e2e-paging.mjs",
-    "test:rollfly:ui": "node tools/e2e-rollfly.mjs"
+    "test:rollfly:ui": "node tools/e2e-rollfly.mjs",
+    "test:dump": "node tools/test-dump.mjs",
+    "test:dump:ui": "node tools/e2e-dump.mjs",
+    "test:page": "node tools/test-page-export.mjs",
+    "test:page:ui": "node tools/e2e-page-export.mjs",
+    "test:trackpage": "node tools/test-track-page.mjs",
+    "test:trackpage:ui": "node tools/e2e-track-page.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

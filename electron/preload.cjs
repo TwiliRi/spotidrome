@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('desktop', {
   coverGet: (payload) => ipcRenderer.invoke('cover:get', payload),
   coverStats: () => ipcRenderer.invoke('cover:stats'),
   coverClear: () => ipcRenderer.invoke('cover:clear'),
+  // звук трека в base64 (обходим CORS для вклейки в html-страницу)
+  audioBase64: (payload) => ipcRenderer.invoke('audio:base64', payload),
+  // сохранение текста в файл (системный диалог «Сохранить как»)
+  saveText: (payload) => ipcRenderer.invoke('file:saveText', payload),
   toggleFullscreen: () => ipcRenderer.invoke('win:toggleFullscreen'),
   minimize: () => ipcRenderer.invoke('win:minimize'),
   maximizeToggle: () => ipcRenderer.invoke('win:maximizeToggle'),

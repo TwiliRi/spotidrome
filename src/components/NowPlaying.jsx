@@ -13,8 +13,9 @@ import { useDominantColor, fmt, songsWord } from '../lib/util';
 import {
   Play, Pause, Next, Prev, Shuffle, Repeat, RepeatOne, Heart, HeartFill, Collapse, Plus,
   QueueIc, MicIc, VolHigh, VolLow, VolMute, Sliders, Download, Check, DotsH, Expand, ArtistIc,
-  ThumbDown, ThumbDownFill, SyncIc, Minus, TimeIc, FolderIc,
+  ThumbDown, ThumbDownFill, SyncIc, Minus, TimeIc, FolderIc, Share,
 } from './Icons';
+import { shareTrackPage } from '../lib/trackPage';
 
 /* ---------------- canvas-визуализатор ---------------- */
 function Visualizer({ accent }) {
@@ -420,15 +421,51 @@ export default function NowPlaying() {
     current, playing, togglePlay, next, prev, time, duration, seek, setUI,
     shuffle, toggleShuffle, repeat, cycleRepeat, toggleStar, starredIds, settings,
     setVolume, toggleMute, offline, download, queue, index, context, addToQueue,
-    dislike, undislike, toggleDislike, dislikedIds, setMusicFolder,
+    dislike, undislike, toggleDislike, dislikedIds, setMusicFolder, toast,
   } = useStore();
 
   const track = current();
   const folder = useStore((st) => (st.showTrackFolder() ? st.folderOfTrack(track) : null));
   const [tab, setTab] = useState('lyrics');
   const [immersive, setImmersive] = useState(false);
+  const [sharing, setSharing] = useState('');          // '' | текст прогресса
+  const shareAlive = useRef(false);
   const coverSrc = useCoverSrc(track ? (track.coverArt || track.albumId) : null, 600);
   const accent = useDominantColor(coverSrc, '#2f6f4f');
+
+  useEffect(() => () => { shareAlive.current = false; }, []);
+
+  /** Отдельная html-страница трека: звук внутри, текст песни, вид как в Spotify. */
+  const shareTrack = async () => {
+    if (!track || sharing) return;
+    shareAlive.current = true;
+    setSharing('Готовлю страницу…');
+    try {
+      const res = await shareTrackPage(track, {
+        src: useStore.getState().srcFor(track),
+        accent,
+        alive: () => shareAlive.current,
+        onProgress: ({ stage, loaded }) => {
+          if (!shareAlive.current) return;
+          setSharing(stage === 'audio' && loaded
+            ? `Скачиваю звук… ${(loaded / 1024 / 1024).toFixed(1)} МБ`
+            : 'Готовлю страницу…');
+        },
+      });
+      if (!shareAlive.current) return;
+      if (res?.canceled) return;
+      if (!res?.ok) { toast('Страницу собрать не удалось', 'error'); return; }
+      const size = (res.size / 1024 / 1024).toFixed(1);
+      toast(res.audio
+        ? `Страница готова: ${res.name} · ${size} МБ`
+        : `Страница готова: ${res.name} · звук вклеить не удалось`, res.audio ? 'success' : 'info');
+    } catch (e) {
+      if (shareAlive.current) toast(`Не получилось: ${e?.message || e}`, 'error');
+    } finally {
+      shareAlive.current = false;
+      setSharing('');
+    }
+  };
 
   useEffect(() => {
     const esc = (e) => {
@@ -493,6 +530,15 @@ export default function NowPlaying() {
             <MicIc size={16} />
           </button>
           <button className="np2-icon" title="Эквалайзер" onClick={() => setUI({ eqOpen: true })}><Sliders size={16} /></button>
+          <button
+            className={`np2-icon${sharing ? ' on' : ''}`}
+            title={sharing || 'Поделиться треком: отдельная html-страница со звуком и текстом'}
+            disabled={!!sharing}
+            onClick={shareTrack}
+            data-testid="np2-share"
+          >
+            <Share size={16} />
+          </button>
           <button className="np2-icon" title="Ещё" onClick={openMore}><DotsH size={16} /></button>
           <button className="np2-icon" title="Свернуть (Esc)" onClick={() => setUI({ nowPlayingOpen: false })}><Collapse size={16} /></button>
         </div>

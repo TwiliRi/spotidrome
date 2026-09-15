@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, shell, globalShortcut, protocol, net } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell, globalShortcut, protocol, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -279,6 +279,27 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 
+/* ---------------- выгрузка текста в файл ----------------
+   Список треков, список исключённых — всё, что клиент умеет отдать текстом.
+   Диалог сохранения системный, поэтому человек сам выбирает, куда положить
+   файл; отмена — не ошибка. */
+
+ipcMain.handle('file:saveText', async (_e, { name = 'file.txt', text = '', ext = 'txt' } = {}) => {
+  try {
+    const res = await dialog.showSaveDialog(win, {
+      title: 'Сохранить файл',
+      defaultPath: path.join(app.getPath('downloads'), String(name)),
+      filters: [{ name: 'Текстовый файл', extensions: [String(ext).replace(/^\./, '')] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    await fsp.writeFile(res.filePath, String(text), 'utf8');
+    return { ok: true, path: res.filePath };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+});
+
 ipcMain.handle('config:get', () => readConfig());
 ipcMain.handle('config:set', (_e, obj) => writeConfig(obj));
 
@@ -345,6 +366,47 @@ ipcMain.handle('offline:save', async (_e, { id, url, ext }) => {
   const st = await fsp.stat(dest);
   return { ok: true, file: path.basename(dest), url: `offline:///${encodeURIComponent(path.basename(dest))}`, size: st.size };
 });
+
+ipcMain.handle('audio:base64', async (_e, { url, maxBytes } = {}) => {
+  // интерфейс не может вытянуть звук через fetch: сервер Navidrome не отдаёт
+  // CORS-заголовки. Из main-процесса запрос идёт мимо браузерных правил.
+  let parsed;
+  try { parsed = new URL(String(url || '')); } catch { return { ok: false, error: 'Некорректный адрес' }; }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { ok: false, error: 'Разрешены только http/https' };
+  const cap = Math.min(Math.max(Number(maxBytes) || 0, 0) || 150 * 1024 * 1024, 400 * 1024 * 1024);
+  try {
+    const buf = await getBuffer(parsed.toString(), cap);
+    return { ok: true, base64: buf.toString('base64'), mime: 'audio/mpeg', size: buf.length };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+});
+
+/** Скачиваем <= cap байт в память; больше лимита — обрываем и говорим об этом. */
+function getBuffer(url, cap, depth = 0) {
+  return new Promise((resolve, reject) => {
+    if (depth > MAX_REDIRECTS) return reject(new Error('Слишком много редиректов'));
+    const mod = url.startsWith('https:') ? https : http;
+    const req = mod.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return getBuffer(new URL(res.headers.location, url).toString(), cap, depth + 1).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      const chunks = [];
+      let size = 0;
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > cap) { req.destroy(); return reject(new Error('Файл больше лимита')); }
+        chunks.push(c);
+      });
+      res.on('end', () => (size ? resolve(Buffer.concat(chunks)) : reject(new Error('Пустой ответ сервера'))));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('Таймаут загрузки')));
+  });
+}
 
 ipcMain.handle('offline:remove', async (_e, id) => {
   const files = await fsp.readdir(cacheDir()).catch(() => []);

@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import { AUTODJ_MODES } from '../lib/autodj';
 import { EQ_FREQS, EQ_PRESETS } from '../lib/audio';
-import { Close, Trash } from './Icons';
+import { Close, Trash, Download } from './Icons';
 import { bytes, plural } from '../lib/util';
+import api from '../lib/api';
+import { collectAllTracks, tracksToText, dumpFileName } from '../lib/trackDump';
+import { saveTextFile } from '../lib/saveFile';
 import { coverCacheStats, clearCoverCache } from '../lib/covers';
 import { lrclibStats, clearLyricsCache } from '../lib/lyrics';
 
@@ -119,6 +122,45 @@ export function SettingsModal() {
     setLyrics(lrclibStats());
     useStore.getState().toast('Кэш текстов очищен — при следующем открытии тексты будут найдены заново', 'info');
   };
+
+  /* Выгрузка списка треков. Сбор идёт альбом за альбомом (Subsonic не умеет
+     отдать все треки разом), поэтому тут и счётчик, и возможность отменить. */
+  const [dump, setDump] = React.useState({ busy: false });
+  const dumpAlive = React.useRef(false);
+  useEffect(() => () => { dumpAlive.current = false; }, []);
+
+  const exportTracks = async () => {
+    if (dump.busy) return;
+    dumpAlive.current = true;
+    setDump({ busy: true, albums: 0, done: 0, tracks: 0 });
+    try {
+      const { songs, stopped } = await collectAllTracks(api, {
+        alive: () => dumpAlive.current,
+        onProgress: (p) => setDump((d) => (d.busy ? { ...d, ...p } : d)),
+      });
+      if (stopped) {
+        useStore.getState().toast('Выгрузка остановлена', 'info');
+        setDump({ busy: false });
+        return;
+      }
+      if (!songs.length) {
+        useStore.getState().toast('В фонотеке не нашлось треков', 'info');
+        setDump({ busy: false });
+        return;
+      }
+      const creds = useStore.getState().credentials;
+      const server = creds?.demo ? 'демо-режим' : (creds?.url || '');
+      const file = dumpFileName();
+      const saved = await saveTextFile(file, tracksToText(songs, { server }), { ext: 'txt', title: 'Сохранить список треков' });
+      if (saved.canceled) { setDump({ busy: false }); return; }
+      useStore.getState().toast(
+        `Выгружено ${plural(songs.length, 'трек', 'трека', 'треков')}: ${saved.path || file}`, 'success');
+      setDump({ busy: false, result: songs.length, file: saved.path || file });
+    } catch (e) {
+      useStore.getState().toast(`Не получилось выгрузить список: ${e?.message || e}`, 'error');
+      setDump({ busy: false });
+    }
+  };
   const total = useMemo(() => Object.values(offline).reduce((s, x) => s + (x.size || 0), 0), [offline]);
 
   return (
@@ -183,6 +225,26 @@ export function SettingsModal() {
           <option value="">Все папки</option>
           {musicFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
+      </div>
+
+      <div className="row">
+        <div>
+          <div className="lbl">Список треков</div>
+          <div className="hint">
+            {dump.busy
+              ? `Собираю: ${dump.done} из ${dump.albums} альбомов · ${plural(dump.tracks || 0, 'трек', 'трека', 'треков')}`
+              : dump.result
+                ? `Готово: ${plural(dump.result, 'трек', 'трека', 'треков')}${dump.file ? ` · ${dump.file}` : ''}`
+                : 'Имена всех треков фонотеки в одном текстовом файле — «Исполнитель — Название»'}
+          </div>
+        </div>
+        {dump.busy ? (
+          <button className="pill-btn" onClick={() => { dumpAlive.current = false; }}>Отмена</button>
+        ) : (
+          <button className="pill-btn" onClick={exportTracks}>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Download size={13} /> Выгрузить в .txt</span>
+          </button>
+        )}
       </div>
 
       <div className="row">
