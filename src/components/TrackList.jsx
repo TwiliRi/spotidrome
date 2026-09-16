@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { linkProps } from '../lib/uiA11y';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import ArtistLinks, { useArtistMenuItems } from './ArtistLinks';
@@ -52,7 +53,11 @@ export default function TrackList({
   const startRadio = useStore((s) => s.startRadio);
   const dislike = useStore((s) => s.dislike);
   const undislike = useStore((s) => s.undislike);
-  const filterDisliked = useStore((s) => s.filterDisliked);
+  const filterExcluded = useStore((s) => s.filterExcluded);
+  // состав списка зависит и от заблокированных исполнителей: подписка нужна,
+  // чтобы список пересобрался сразу после бана, а не при следующем рендере
+  const bannedArtists = useStore((s) => s.settings.bannedArtists);
+  const hideFlags = useStore((s) => (s.settings.hideBanned ? 1 : 0) + (s.settings.hideDisliked ? 2 : 0));
   const myPlaylists = useStore((s) => s.editablePlaylists());
   const dislikedIds = useStore((s) => s.dislikedIds);
   const playing = useStore((s) => s.playing);
@@ -82,8 +87,8 @@ export default function TrackList({
     return () => io.disconnect();
   }, [onReachEnd, isVirtual, tracks.length]);
 
-  // исключённые треки не показываем (настройка «Скрывать исключённые»)
-  const rows = useMemo(() => filterDisliked(tracks), [tracks, dislikedIds, filterDisliked]);
+  // исключённые треки и заблокированные исполнители не показываем
+  const rows = useMemo(() => filterExcluded(tracks), [tracks, dislikedIds, bannedArtists, hideFlags, filterExcluded]);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
 
@@ -239,6 +244,25 @@ export default function TrackList({
       setSel(new Set(rows.map((_, i) => i)));
       return;
     }
+    /* стрелки ходят по списку, Enter играет выбранное: без этого список
+       треков был доступен только мышью */
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !busy && rows.length) {
+      e.preventDefault();
+      const from = sel.size ? Math.max(...sel) : -1;
+      const one = sel.size === 1 ? [...sel][0] : from;
+      const next = e.key === 'ArrowDown'
+        ? Math.min(rows.length - 1, (one < 0 ? -1 : one) + 1)
+        : Math.max(0, (one < 0 ? rows.length : one) - 1);
+      selectOnly(next);
+      listRef.current?.scrollToRow?.({ index: next, align: 'auto' });
+      boxRef.current?.querySelectorAll('.track-row')[next]?.scrollIntoView?.({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter' && sel.size === 1 && !busy) {
+      e.preventDefault();
+      playQueue(rows, [...sel][0], context);
+      return;
+    }
     if (e.key === 'Escape' && sel.size && !busy) clearSel();
     // Del снимает выделенное там, где у списка есть «удалить» (плейлист, любимые)
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel.size && !busy && canRemove) {
@@ -281,8 +305,8 @@ export default function TrackList({
         <div className="cell-title">
           {showCover && <Cover id={t.coverArt || t.albumId} size={80} alt={t.album || t.title} />}
           <div style={{ minWidth: 0 }}>
-            <div className="t-name">{t.title}</div>
-            <div className="t-artist">
+            <div className="t-name" title={t.title || undefined}>{t.title}</div>
+            <div className="t-artist" title={t.artist || undefined}>
               {off && <span className="dl-dot" style={{ display: 'inline-grid', width: 12, height: 12, marginRight: 6, verticalAlign: 'middle' }}><Check size={8} /></span>}
               <ArtistLinks as="span" item={t} />
             </div>
@@ -290,7 +314,12 @@ export default function TrackList({
         </div>
 
         {showAlbum && (
-          <div className="ellipsis" onClick={(e) => { e.stopPropagation(); if (t.albumId) nav(`/album/${t.albumId}`); }} style={{ cursor: t.albumId ? 'pointer' : 'default' }}>
+          <div
+            className="ellipsis"
+            title={t.album || undefined}
+            {...linkProps(() => { if (t.albumId) nav(`/album/${t.albumId}`); }, !!t.albumId)}
+            style={{ cursor: t.albumId ? 'pointer' : 'default' }}
+          >
             {t.album}
           </div>
         )}
@@ -368,7 +397,7 @@ export default function TrackList({
 
   if (!rows.length) {
     return (
-      <div className="tracks" ref={boxRef} tabIndex={-1} onKeyDown={onKeyDown}>
+      <div className="tracks" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown}>
         {head}
         <div className="muted" style={{ padding: '32px 16px' }}>Здесь пока пусто.</div>
       </div>
@@ -377,7 +406,7 @@ export default function TrackList({
 
   if (!isVirtual) {
     return (
-      <div className="tracks" ref={boxRef} tabIndex={-1} onKeyDown={onKeyDown}>
+      <div className="tracks" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown}>
         {head}
         {selBar}
         {rows.map((t, i) => renderRow(t, i))}
@@ -387,7 +416,7 @@ export default function TrackList({
   }
 
   return (
-    <div className="tracks tracks-virtual" ref={boxRef} tabIndex={-1} onKeyDown={onKeyDown}>
+    <div className="tracks tracks-virtual" ref={boxRef} tabIndex={0} onKeyDown={onKeyDown}>
       {head}
       {selBar}
       <VList

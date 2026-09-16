@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import Splitter from './Splitter';
 import { Cover, Slider } from './UI';
+import { linkProps } from '../lib/uiA11y';
 import {
   Play, Pause, Next, Prev, Shuffle, Repeat, RepeatOne, Heart, HeartFill,
   VolHigh, VolLow, VolMute, QueueIc, MicIc, Expand, Sliders, Download, Check, RadioIc,
@@ -51,7 +52,7 @@ export default function PlayerBar() {
     volume: (
       <>
         <button className="ghost-btn" onClick={toggleMute} title="Звук"><VolIcon size={16} /></button>
-        <Slider className="vol" value={vol} max={1} onChange={setVolume} bubble={volumeLabel} wheelStep={0.04} />
+        <Slider className="vol" value={vol} max={1} onChange={setVolume} bubble={volumeLabel} wheelStep={0.04} label="Громкость" />
       </>
     ),
     mini: <button className="ghost-btn" onClick={enterMini} title="Мини-плеер: маленькое окно поверх других (Shift + M)"><MiniIc size={16} /></button>,
@@ -72,7 +73,11 @@ export default function PlayerBar() {
           <>
             <Cover id={track.coverArt || track.albumId} size={120} alt={track.album} onClick={() => setUI({ nowPlayingOpen: true })} />
             <div className="meta">
-              <div className="t" onClick={() => track.albumId && nav(`/album/${track.albumId}`)}>{track.title}</div>
+              <div
+                className="t"
+                style={{ cursor: track.albumId ? 'pointer' : 'default' }}
+                {...linkProps(() => { if (track.albumId) nav(`/album/${track.albumId}`); }, !!track.albumId)}
+              >{track.title}</div>
               <ArtistLinks item={track} className="a" />
               {folder && (
                 <button

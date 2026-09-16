@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import { AUTODJ_MODES } from '../lib/autodj';
 import { EQ_FREQS, EQ_PRESETS } from '../lib/audio';
 import { Close, Trash, Download } from './Icons';
-import { bytes, plural } from '../lib/util';
+import { bytes, plural, songsWord } from '../lib/util';
+import { Switch } from './UI';
+import { useModalFocus } from '../lib/uiA11y';
 import api from '../lib/api';
 import { collectAllTracks, tracksToText, dumpFileName } from '../lib/trackDump';
 import { saveTextFile } from '../lib/saveFile';
@@ -14,28 +16,22 @@ import { lrclibStats, clearLyricsCache } from '../lib/lyrics';
 const LYR_OFFSETS = [-3, -2, -1, -0.5, -0.2, 0, 0.2, 0.5, 1, 2, 3];
 
 function Modal({ title, onClose, children, width }) {
-  useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
+  const ref = useRef(null);
+  // Esc, ловушка фокуса и возврат фокуса на кнопку, которой окно открыли
+  useModalFocus(ref, { onClose });
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={width ? { width } : undefined}>
+      <div className="modal" ref={ref} tabIndex={-1} style={width ? { width } : undefined}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ marginBottom: 18 }}>{title}</h3>
-          <button className="icon-btn" onClick={onClose}><Close size={14} /></button>
+          <button className="icon-btn" onClick={onClose} title="Закрыть" aria-label="Закрыть"><Close size={14} /></button>
         </div>
         {children}
       </div>
     </div>
   );
 }
-
-const Switch = ({ on, onClick }) => (
-  <button className={`switch${on ? ' on' : ''}`} onClick={onClick}><i /></button>
-);
 
 export function EqualizerModal() {
   const { settings, setEq, setUI } = useStore();
@@ -54,7 +50,7 @@ export function EqualizerModal() {
           <div className="lbl">Включить эквалайзер</div>
           <div className="hint">10 полос + предусиление, обрабатывается через Web Audio</div>
         </div>
-        <Switch on={eq.enabled} onClick={() => setEq({ enabled: !eq.enabled })} />
+        <Switch on={eq.enabled} onClick={() => setEq({ enabled: !eq.enabled })} label="Включить эквалайзер" />
       </div>
 
       <div style={{ opacity: eq.enabled ? 1 : .45, pointerEvents: eq.enabled ? 'auto' : 'none' }}>
@@ -106,6 +102,7 @@ export function SettingsModal() {
   } = useStore();
   const nav = useNavigate();
   const dislikedCount = useStore((st) => st.dislikedIds.size);
+  const bannedCount = useStore((st) => (st.settings.bannedArtists || []).length);
   const dj = settings.autodj || {};
   const [coverCache, setCoverCache] = React.useState(null);
   const [lyrics, setLyrics] = React.useState(null);
@@ -252,7 +249,7 @@ export function SettingsModal() {
           <div className="lbl">AutoDJ</div>
           <div className="hint">Бесконечная очередь: клиент дописывает похожие треки (клавиша D)</div>
         </div>
-        <div className={`switch${dj.enabled ? ' on' : ''}`} onClick={() => useStore.getState().toggleAutoDj()}><i /></div>
+        <Switch on={dj.enabled} onClick={() => useStore.getState().toggleAutoDj()} label="AutoDJ" />
       </div>
 
       <div className="row">
@@ -280,7 +277,7 @@ export function SettingsModal() {
           <div className="lbl">Скробблинг</div>
           <div className="hint">Отправлять прослушивания в Navidrome (и дальше в Last.fm / ListenBrainz)</div>
         </div>
-        <Switch on={settings.scrobble} onClick={() => updateSettings({ scrobble: !settings.scrobble })} />
+        <Switch on={settings.scrobble} onClick={() => updateSettings({ scrobble: !settings.scrobble })} label="Скробблинг" />
       </div>
 
       <div className="row">
@@ -293,7 +290,7 @@ export function SettingsModal() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Switch on={settings.rememberSearch !== false} onClick={() => updateSettings({ rememberSearch: settings.rememberSearch === false })} />
+          <Switch on={settings.rememberSearch !== false} onClick={() => updateSettings({ rememberSearch: settings.rememberSearch === false })} label="Запоминать запросы" />
           {!!searchHistory.length && (
             <button className="pill-btn" onClick={() => { clearSearchHistory(); useStore.getState().toast('История поиска очищена', 'info'); }}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Trash size={13} /> Очистить</span>
@@ -312,7 +309,7 @@ export function SettingsModal() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Switch on={settings.rememberPlays !== false} onClick={() => updateSettings({ rememberPlays: settings.rememberPlays === false })} />
+          <Switch on={settings.rememberPlays !== false} onClick={() => updateSettings({ rememberPlays: settings.rememberPlays === false })} label="Запоминать прослушанное" />
           {!!playHistory.length && (
             <button className="pill-btn" onClick={() => { clearPlayHistory(); useStore.getState().toast('История прослушиваний очищена', 'info'); }}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Trash size={13} /> Очистить</span>
@@ -329,7 +326,7 @@ export function SettingsModal() {
             {lyrics ? ` · запросов ${lyrics.sent}, найдено ${lyrics.hits}` : ''}
           </div>
         </div>
-        <Switch on={settings.lrclib !== false} onClick={() => updateSettings({ lrclib: settings.lrclib === false })} />
+        <Switch on={settings.lrclib !== false} onClick={() => updateSettings({ lrclib: settings.lrclib === false })} label="Тексты: база LRCLIB" />
       </div>
 
       <div className="row">
@@ -337,7 +334,7 @@ export function SettingsModal() {
           <div className="lbl">Готовить тексты заранее</div>
           <div className="hint">Пока играет трек, в фоне подтягивать тексты для следующих треков очереди</div>
         </div>
-        <Switch on={settings.lyricsPrefetch !== false} onClick={() => updateSettings({ lyricsPrefetch: settings.lyricsPrefetch === false })} />
+        <Switch on={settings.lyricsPrefetch !== false} onClick={() => updateSettings({ lyricsPrefetch: settings.lyricsPrefetch === false })} label="Готовить тексты заранее" />
       </div>
 
       <div className="row">
@@ -390,7 +387,7 @@ export function SettingsModal() {
           <div className="lbl">Визуализатор</div>
           <div className="hint">Спектр на полноэкранном плеере</div>
         </div>
-        <Switch on={settings.showVisualizer} onClick={() => updateSettings({ showVisualizer: !settings.showVisualizer })} />
+        <Switch on={settings.showVisualizer} onClick={() => updateSettings({ showVisualizer: !settings.showVisualizer })} label="Визуализатор" />
       </div>
 
       <div className="row">
@@ -412,15 +409,30 @@ export function SettingsModal() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Switch on={settings.hideDisliked} onClick={() => updateSettings({ hideDisliked: !settings.hideDisliked })} />
+          <Switch on={settings.hideDisliked} onClick={() => updateSettings({ hideDisliked: !settings.hideDisliked })} label="Скрывать исключённые треки" />
           <button className="pill-btn" onClick={() => { setUI({ settingsOpen: false }); nav('/disliked'); }}>Список</button>
         </div>
       </div>
 
       <div className="row">
         <div>
+          <div className="lbl">Заблокированные исполнители</div>
+          <div className="hint">
+            {bannedCount
+              ? `${bannedCount} — не звучат в AutoDJ, радио и случайном выборе`
+              : 'Блокируется в меню трека или на странице исполнителя'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Switch on={settings.hideBanned !== false} onClick={() => updateSettings({ hideBanned: !(settings.hideBanned !== false) })} label="Скрывать их треки" />
+          <button className="pill-btn" onClick={() => { setUI({ settingsOpen: false }); nav('/disliked?tab=artists'); }}>Список</button>
+        </div>
+      </div>
+
+      <div className="row">
+        <div>
           <div className="lbl">Офлайн-кэш</div>
-          <div className="hint">{Object.keys(offline).length} треков • {bytes(total)}</div>
+          <div className="hint">{songsWord(Object.keys(offline).length)} • {bytes(total)}</div>
         </div>
         <button className="pill-btn" onClick={clearDownloads}><span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Trash size={13} /> Очистить</span></button>
       </div>

@@ -7,6 +7,15 @@ const desktop = typeof window !== 'undefined' ? window.desktop : null;
 /* Ширина свёрнутой медиатеки — как в Spotify: только обложки */
 export const RAIL_W = 76;
 
+/* Сколько места обязано остаться центральному блоку (MIN_MAIN) и сколько
+   минимум нужно панели очереди (MIN_RIGHT). Когда очередь в это не вписывается,
+   она уступает: сначала ужимается, а потом прячется вместе со своей колонкой —
+   иначе колонка остаётся пустой и справа чернеет дыра во весь экран. */
+const MIN_MAIN = 360;
+const MIN_RIGHT = 240;
+const APP_PAD = 16;   /* .app: padding 8px слева и справа */
+const APP_GAP = 8;    /* .app: gap между колонками */
+
 export const DENSITY = {
   compact: { row: 40, pad: 6, font: 13, gap: 6 },
   normal: { row: 56, pad: 8, font: 14, gap: 8 },
@@ -29,8 +38,30 @@ export const clampUi = (patch) => {
   return out;
 };
 
+/**
+ * Вписывает панель очереди в окно. Возвращает false, когда места нет совсем
+ * (тогда <html data-queue="off"> — панель и её колонка убираются).
+ */
+export function fitPanels(ui, opts = {}) {
+  const el = document.documentElement;
+  const vw = window.innerWidth || 1280;
+  const collapsed = !!ui.sidebarCollapsed;
+  const sideW = ui.showSidebar ? (collapsed ? RAIL_W : Number(ui.sidebarW) || 260) : 0;
+  const sideGap = ui.showSidebar ? APP_GAP : 0;
+  const avail = vw - APP_PAD - sideW - sideGap - APP_GAP - MIN_MAIN;
+
+  if (!opts.queueOpen || avail < MIN_RIGHT) {
+    el.dataset.queue = 'off';
+    return false;
+  }
+  el.dataset.queue = 'on';
+  const rightW = Math.max(MIN_RIGHT, Math.min(Number(ui.rightW) || 340, avail));
+  el.style.setProperty('--rightbar-w', `${Math.round(rightW)}px`);
+  return true;
+}
+
 /** Раскладывает настройки по CSS-переменным и атрибутам <html>. */
-export function applyUi(raw) {
+export function applyUi(raw, opts = {}) {
   if (typeof document === 'undefined') return;
   const merged = { ...DEFAULT_UI, ...(raw || {}) };
   // значения могли прийти из config.json (его правят руками) или от старой
@@ -43,6 +74,8 @@ export function applyUi(raw) {
   el.style.setProperty('--sidebar-w', `${collapsed ? RAIL_W : ui.sidebarW}px`);
   el.style.setProperty('--sidebar-full-w', `${ui.sidebarW}px`);
   el.style.setProperty('--rightbar-w', `${ui.rightW}px`);
+  /* панель очереди: ужимаем, а если совсем не влезает — прячем с колонкой */
+  fitPanels(ui, opts);
   el.style.setProperty('--bar-h', `${ui.barH}px`);
   // в десктопе даже «скрытая» панель оставляет полоску 30px — иначе окно
   // без рамки нечем двигать и закрывать
@@ -77,7 +110,28 @@ export function applyUi(raw) {
 
 export default function useUiLayout() {
   const ui = useStore((s) => s.settings.ui);
-  useEffect(() => { applyUi(ui); }, [ui]);
+  const queueOpen = useStore((s) => s.queueOpen);
+  useEffect(() => { applyUi(ui, { queueOpen }); }, [ui, queueOpen]);
+
+  /* окно тянем мышью — панели пересчитываем по ходу, но не чаще кадра */
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let raf = 0;
+    const onResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const st = useStore.getState();
+        applyUi(st.settings.ui, { queueOpen: st.queueOpen });
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   useEffect(() => () => { if (typeof document !== 'undefined') document.documentElement.style.zoom = ''; }, []);
   return ui;
 }

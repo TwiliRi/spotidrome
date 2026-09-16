@@ -7,7 +7,7 @@ import usePlaylistDnd from '../lib/usePlaylistDnd';
 import { Cover } from './UI';
 import {
   Search, Library, LibraryFill, Plus, HeartFill, Download, ThumbDownFill, Clock,
-  ChevronLeft, ChevronRight, Expand as ExpandIc, PinIc, PinFillIc, QueueIc, Trash, SyncIc,
+  ChevronLeft, ChevronRight, Expand as ExpandIc, PinIc, PinFillIc, QueueIc, Trash, SyncIc, ChartIc,
 } from './Icons';
 import { songsWord, plural } from '../lib/util';
 
@@ -41,6 +41,13 @@ function ItemArt({ it, size = 100 }) {
     return (
       <div className="ph" style={{ display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg,#1f3b57,#8fd3f4)' }}>
         <Clock size={18} />
+      </div>
+    );
+  }
+  if (it.kind === 'stats') {
+    return (
+      <div className="ph" style={{ display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg,#4a3fa0,#8fd3f4)' }}>
+        <ChartIc size={18} />
       </div>
     );
   }
@@ -106,6 +113,10 @@ export default function Sidebar() {
       list.push({
         id: '__recent', kind: 'recent', group: 'playlists', name: 'Недавнее', to: '/recent', fixed: true,
         sub: playCount ? `История • ${plural(playCount, 'запись', 'записи', 'записей')}` : 'История прослушиваний',
+      });
+      list.push({
+        id: '__stats', kind: 'stats', group: 'playlists', name: 'Статистика', to: '/stats', fixed: true,
+        sub: playCount ? 'Графики и топы' : 'Что вы слушали',
       });
       if (dislikedCount) {
         list.push({ id: '__disliked', kind: 'disliked', group: 'playlists', name: 'Исключённые треки', sub: `Локально • ${songsWord(dislikedCount)}`, to: '/disliked', fixed: true });
@@ -348,9 +359,11 @@ export default function Sidebar() {
                 {...dndProps(it)}
               >
                 <ItemArt it={it} size={100} />
+                {/* название и подпись в узкой панели обрезаются — полный текст
+                    должен быть доступен хотя бы подсказкой */}
                 <div className="meta">
-                  <div className="name"><span className="t">{it.name}</span></div>
-                  <div className="sub">{it.sub}</div>
+                  <div className="name" title={it.name}><span className="t">{it.name}</span></div>
+                  {it.sub && <div className="sub" title={it.sub}>{it.sub}</div>}
                 </div>
                 {!it.fixed && (
                   <span

@@ -4,12 +4,14 @@ import engine from '../lib/audio';
 import { pickAutoDj, modeName } from '../lib/autodj';
 import { pushHistory, dropHistory, normalizeQuery, HISTORY_MAX, MIN_QUERY } from '../lib/searchHistory';
 import { pushPlay, dropPlay, sanitizePlays, MIN_LISTEN_SEC } from '../lib/playHistory.js';
+import { buildDemoPlays, demoPlaySeed } from '../lib/demoPlays.js';
 import { prefetchCovers, resolveCover } from '../lib/covers';
 import {
   EMPTY_INDEX as EMPTY_FOLDER_INDEX, folderIndexKey, buildAlbumFolderIndex, folderOfSong,
   readFolderCache, writeFolderCache, dropFolderCache,
 } from '../lib/folderIndex';
 import { songsWord } from '../lib/util';
+import { bannedKeys, isBannedArtist as matchBanned, trackHasBannedArtist, filterBannedTracks } from '../lib/banned.js';
 
 const desktop = typeof window !== 'undefined' ? window.desktop : null;
 
@@ -63,11 +65,15 @@ const DEFAULT_SETTINGS = {
   autodj: { enabled: false, mode: 'mix', buffer: 5, noRepeat: true },
   showVisualizer: true,
   hideDisliked: true,       // прятать исключённые треки в списках и подборках
+  bannedArtists: [],        // [{ id, name, at }] — исполнители, которых не должно быть слышно
+  hideBanned: true,         // прятать треки заблокированных исполнителей в списках
   rollAnim: 'vinyl',        // анимация случайного трека: 'vinyl' | 'dice' | 'off'
   pins: [],                 // закреплённое в медиатеке: ['playlist:12', 'album:7', …]
   playlistOrder: [],        // свой порядок плейлистов в медиатеке: ['pl-id', …] (перетаскиванием)
   rememberSearch: true,     // запоминать поисковые запросы (история под полем поиска)
   rememberPlays: true,      // запоминать, что играли (экран «Недавнее»)
+  demoPlaysSeeded: false,   // в демо-режиме история уже засеяна (больше не трогаем)
+  demoPlaysAt: 0,           // когда засеяли: по этой метке демо-записи и выбрасываются
   // тексты: если на сервере их нет (или они без таймкодов) — берём синхронный текст из LRCLIB
   lrclib: true,             // искать недостающие тексты на lrclib.net
   lyricsPrefetch: true,     // подготавливать тексты для следующих треков очереди
@@ -248,6 +254,7 @@ const useStore = create((set, get) => ({
   // плавающую карточку поверх интерфейса
   miniForced: false,
   miniPos: null,
+  appMinimized: false,      // «свернуть приложение» целиком
 
   toast(text, kind = 'info', action = null) {
     const id = Math.random().toString(36).slice(2);
@@ -351,6 +358,8 @@ const useStore = create((set, get) => ({
       get().loadMusicFolders();
       get().loadPlaylists();
       get().loadStarred();
+      if (api.demo) get().seedDemoPlays();
+      else get().dropSeededDemoPlays();
       return true;
     } catch (e) {
       set({ connecting: false, connected: false, authError: e.message || 'Не удалось подключиться' });
@@ -461,6 +470,95 @@ const useStore = create((set, get) => ({
     else get().toast('Список хранится в браузере (localStorage)', 'info');
   },
 
+  /* ---------- заблокированные исполнители ----------
+     Список хранится в настройках (config.json в десктопе, localStorage —
+     в браузере). Бан действует на всё, что подбирается само: AutoDJ, радио,
+     случайный трек, «далее» в очереди; вручную включить такой трек можно
+     всегда — бан запрещает подборки, а не фонотеку. */
+
+  bannedKeys() { return bannedKeys(get().settings.bannedArtists || []); },
+
+  /** Исполнитель заблокирован? Принимает строку или { id, name }. */
+  isArtistBanned(entry) { return matchBanned(get().bannedKeys(), entry); },
+
+  /** У трека есть заблокированный исполнитель? */
+  trackBanned(track) { return trackHasBannedArtist(get().bannedKeys(), track); },
+
+  /** Убрать из списка треки заблокированных исполнителей (без учёта настройки). */
+  filterBanned(list) { return filterBannedTracks(get().bannedKeys(), list); },
+
+  /** Всё исключённое сразу: треки-дизлайки и заблокированные исполнители. */
+  filterExcluded(list) {
+    let out = Array.isArray(list) ? list : (list || []);
+    if (get().settings.hideBanned) out = get().filterBanned(out);
+    return get().filterDisliked(out);
+  },
+
+  banArtist(entry, { silent = false } = {}) {
+    const name = String((typeof entry === 'string' ? entry : entry?.name) || '').trim();
+    const id = (typeof entry === 'string' ? null : entry?.id) || null;
+    if (!name && !id) return;
+    if (matchBanned(get().bannedKeys(), { id, name })) return;
+
+    const bannedArtists = [...(get().settings.bannedArtists || []), { id: id || null, name, at: Date.now() }];
+    get().updateSettings({ bannedArtists });
+    get().dropBannedFromQueue();
+    if (!silent) {
+      get().toast(`Исполнитель «${name || id}» больше не попадётся`, 'info', {
+        label: 'Вернуть', onClick: () => get().unbanArtist({ id, name }),
+      });
+    }
+  },
+
+  unbanArtist(entry) {
+    const name = String((typeof entry === 'string' ? entry : entry?.name) || '').trim();
+    const id = (typeof entry === 'string' ? null : entry?.id) || null;
+    const cur = get().settings.bannedArtists || [];
+    const left = cur.filter((a) => {
+      const sameId = id && a.id && String(a.id) === String(id);
+      const sameName = name && String(a.name || '').trim().toLowerCase() === name.toLowerCase();
+      return !sameId && !sameName;
+    });
+    if (left.length === cur.length) return;
+    get().updateSettings({ bannedArtists: left });
+  },
+
+  toggleArtistBan(entry) {
+    if (get().isArtistBanned(entry)) {
+      get().unbanArtist(entry);
+      const name = typeof entry === 'string' ? entry : entry?.name || '';
+      get().toast(`Снова можно: ${name}`, 'success');
+    } else {
+      get().banArtist(entry);
+    }
+  },
+
+  clearBannedArtists() {
+    if (!(get().settings.bannedArtists || []).length) return;
+    get().updateSettings({ bannedArtists: [] });
+    get().toast('Заблокированные исполнители разблокированы', 'success');
+  },
+
+  /** Выкинуть из очереди треки заблокированных; если играет такой — взять следующий. */
+  dropBannedFromQueue() {
+    const keys = get().bannedKeys();
+    if (!keys.size) return;
+    const { queue, index } = get();
+    if (!queue.length) return;
+    const bad = (t) => trackHasBannedArtist(keys, t);
+    const playingIt = !!queue[index] && bad(queue[index]);
+    const q = queue.filter((t) => !bad(t));
+    if (q.length === queue.length) return;                 // выкидывать нечего
+    if (!q.length) { set({ queue: [], queueSource: [], index: -1 }); engine.pause(); return; }
+
+    const keepId = playingIt ? null : queue[index]?.id;
+    const nextIndex = keepId
+      ? Math.max(0, q.findIndex((t) => t.id === keepId))
+      : Math.min(index, q.length - 1);
+    set({ queue: q, queueSource: q, index: nextIndex });
+    if (playingIt) get().loadCurrent(true);
+  },
+
   /* ---------- история поиска ----------
      Пишется только по явному действию пользователя — Enter в поле поиска или
      кнопка «Искать» (см. TitleBar), а также при выборе строки из самой истории.
@@ -526,6 +624,42 @@ const useStore = create((set, get) => ({
   restorePlayHistory(list) {
     set({ playHistory: sanitizePlays(list) });
     get().persistNow();
+  },
+
+  /* Демо-режим: история прослушиваний один раз засеивается правдоподобной
+     выборкой — иначе экран статистики выглядел бы пустым. Реальную историю
+     (и выключенное «запоминать, что играли») не трогаем. */
+  seedDemoPlays() {
+    const st = get();
+    if (!api.demo || st.settings.rememberPlays === false) return false;
+    if ((st.playHistory || []).length || st.settings.demoPlaysSeeded) return false;
+    const songs = api.mock?.songs;
+    if (!songs || !songs.length) return false;
+    const list = buildDemoPlays(songs, { now: Date.now(), seed: demoPlaySeed() });
+    if (!list.length) return false;
+    set({
+      playHistory: sanitizePlays(list),
+      settings: { ...st.settings, demoPlaysSeeded: true, demoPlaysAt: Date.now() },
+    });
+    get().persistNow();
+    return true;
+  },
+
+  /* Засеянная демо-история не должна уезжать на настоящий сервер: выбрасываем
+     записи, сделанные до момента засева. Реальное прослушивание (оно новее)
+     при этом остаётся. */
+  dropSeededDemoPlays() {
+    const st = get();
+    if (api.demo || !st.settings.demoPlaysSeeded) return false;
+    const seededAt = Number(st.settings.demoPlaysAt) || 0;
+    const list = (st.playHistory || []).filter((x) => Number(x.at) > seededAt);
+    if (list.length === (st.playHistory || []).length) return false;
+    set({
+      playHistory: list,
+      settings: { ...st.settings, demoPlaysSeeded: false, demoPlaysAt: 0 },
+    });
+    get().persistNow();
+    return true;
   },
 
   /* ---------- settings ---------- */
@@ -921,7 +1055,7 @@ const useStore = create((set, get) => ({
     if (!tracks?.length) return;
     const raw = tracks.filter(Boolean);
     const wanted = raw[startIndex] || raw[0];
-    let list = get().filterDisliked(raw);
+    let list = get().filterExcluded(raw);
     // явный запуск конкретного трека уважаем, даже если он исключён
     if (wanted && !list.some((t) => t.id === wanted.id)) list = [wanted, ...list];
     if (!list.length) { get().toast('Все треки из этого списка исключены', 'info'); return; }
@@ -1001,13 +1135,17 @@ const useStore = create((set, get) => ({
       else if (manual) i = 0;
       else { engine.pause(); engine.seek(0); return; }
     }
-    // страховка: исключённые треки не должны играть, даже если попали в очередь.
-    // Очередь перечитываем: AutoDJ мог добавить в неё треки, пока мы ждали ответа.
+    // страховка: исключённые треки и заблокированные исполнители не должны
+    // играть, даже если попали в очередь. Очередь перечитываем: AutoDJ мог
+    // добавить в неё треки, пока мы ждали ответа.
     const ids = get().dislikedIds;
-    if (ids.size && get().settings.hideDisliked) {
+    const skipDisliked = ids.size && get().settings.hideDisliked;
+    const keys = get().settings.hideBanned ? get().bannedKeys() : null;
+    if (skipDisliked || keys) {
       const q = get().queue;
+      const stop = (t) => (skipDisliked && ids.has(t?.id)) || (keys && trackHasBannedArtist(keys, t));
       let guard = 0;
-      while (q[i] && ids.has(q[i].id) && guard++ < q.length) i += 1;
+      while (q[i] && stop(q[i]) && guard++ < q.length) i += 1;
       if (i >= q.length) { engine.pause(); engine.seek(0); return; }
     }
     set({ index: i });
@@ -1050,7 +1188,7 @@ const useStore = create((set, get) => ({
   },
 
   addToQueue(tracks, next = false) {
-    const list = get().filterDisliked(Array.isArray(tracks) ? tracks : [tracks]);
+    const list = get().filterExcluded(Array.isArray(tracks) ? tracks : [tracks]);
     if (!list.length) { get().toast('Трек исключён из подборок', 'info'); return; }
     const { queue, index } = get();
     if (!queue.length) { get().playQueue(list, 0, { type: 'queue', name: 'Очередь' }); return; }
@@ -1092,7 +1230,7 @@ const useStore = create((set, get) => ({
     if (get().randomBusy) return;
     set({ randomBusy: true });
     try {
-      const songs = await api.getRandomSongs(50);
+      const songs = get().filterExcluded(await api.getRandomSongs(50));
       if (!songs.length) { get().toast('В библиотеке нечего играть', 'error'); return; }
       // playQueue уважает включённый шаффл, поэтому порядок и так будет случайным
       await get().playQueue(songs, 0, { type: 'random', name: 'Случайные треки' });
@@ -1159,7 +1297,7 @@ const useStore = create((set, get) => ({
         if (get().dice?.phase === 'spin') go('balance');
       }, T.balanceAfter);
 
-      const songs = await songsP;
+      const songs = get().filterExcluded(await songsP);
       if (!songs.length) throw new Error('В библиотеке нечего играть');
 
       /* Обложки треков, из которых идёт выбор: 3D-сцена берёт их, чтобы в кадре
@@ -1283,7 +1421,13 @@ const useStore = create((set, get) => ({
       const exclude = new Set(queue.map((t) => t.id));
       if (dj.noRepeat) get().djSeen.forEach((id) => exclude.add(id));
       get().dislikedIds.forEach((id) => exclude.add(id));   // исключённые не подмешиваем
-      const picks = await pickAutoDj({ api, mode: dj.mode || 'mix', seed, need, exclude });
+      const keys = get().bannedKeys();
+      const picks = await pickAutoDj({
+        api, mode: dj.mode || 'mix', seed, need, exclude,
+        // заблокированные исполнители отсекаются на отборе: пул большой,
+        // а «добор чем есть» в конце их бы снова пустил
+        reject: keys.size ? (t) => trackHasBannedArtist(keys, t) : null,
+      });
       if (!picks.length) {
         if (force) get().toast('AutoDJ: подходящих треков не нашлось', 'error');
         return 0;
@@ -1338,6 +1482,17 @@ const useStore = create((set, get) => ({
     if (d?.setMini) d.setMini(false).catch(() => {});
     set({ miniForced: false });
   },
+  /* «Свернуть приложение». В десктопе — настоящее окно в панель задач;
+     в браузере своего окна нет, поэтому сворачиваем весь интерфейс в плашку,
+     музыка при этом продолжает играть. */
+  minimizeApp() {
+    const d = typeof window !== 'undefined' ? window.desktop : null;
+    if (d?.minimize) { d.minimize().catch(() => {}); return true; }
+    set({ appMinimized: true, nowPlayingOpen: false, contextMenu: null });
+    return false;
+  },
+  restoreApp() { set({ appMinimized: false }); },
+
   toggleMini() {
     const small = typeof window !== 'undefined'
       && (window.innerWidth < 760 || window.innerHeight < 560);

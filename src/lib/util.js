@@ -92,6 +92,41 @@ export function useDominantColor(src, fallback = '#2f2f2f') {
   return color;
 }
 
+/** Яркий вариант цвета для графиков.
+   Доминантный цвет обложки намеренно приглушён и затемнён (как у Spotify) —
+   на hero-подложке это хорошо, а вот столбцы и заливки на таком цвете
+   выглядят грязно. Поднимаем насыщенность и светлоту до внятного акцента. */
+export function vividColor(color, { sat = 0.55, light = 0.55 } = {}) {
+  const m = String(color || '').trim();
+  const hex = m.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  const rgb = m.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
+  let r = 0; let g = 0; let b = 0;
+  if (hex) {
+    const h = hex[1];
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    r = parseInt(full.slice(0, 2), 16); g = parseInt(full.slice(2, 4), 16); b = parseInt(full.slice(4, 6), 16);
+  } else if (rgb) {
+    r = +rgb[1]; g = +rgb[2]; b = +rgb[3];
+  } else {
+    return m || '#4a3fa0';
+  }
+  const R = r / 255; const G = g / 255; const B = b / 255;
+  const max = Math.max(R, G, B); const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === R) h = (G - B) / d + (G < B ? 6 : 0);
+    else if (max === G) h = (B - R) / d + 2;
+    else h = (R - G) / d + 4;
+    h *= 60;
+  }
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  // почти серый цвет не превращаем в красный: такого акцента на обложке нет
+  const S = s < 0.08 ? s : Math.max(s, sat);
+  return `hsl(${Math.round(h)}, ${Math.round(S * 100)}%, ${Math.round(Math.min(0.62, Math.max(l, light)) * 100)}%)`;
+}
+
 /** Индекс элемента по id. Строки таблицы могут быть отфильтрованы (исключённые
  *  треки), поэтому позиция строки ≠ порядку в плейлисте на сервере. */
 export function indexById(list, item) {

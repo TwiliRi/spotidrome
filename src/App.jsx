@@ -32,6 +32,7 @@ import Liked from './pages/Liked';
 import Offline from './pages/Offline';
 import Disliked from './pages/Disliked';
 import Recent from './pages/Recent';
+import Stats from './pages/Stats';
 import Genre from './pages/Genre';
 
 function Main() {
@@ -73,6 +74,7 @@ function Main() {
           <Route path="/playlist/:id" element={<Playlist />} />
           <Route path="/liked" element={<Liked />} />
           <Route path="/recent" element={<Recent />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/offline" element={<Offline />} />
           <Route path="/disliked" element={<Disliked />} />
           <Route path="/genre/:name" element={<Genre />} />
@@ -128,6 +130,31 @@ function MiniFloat() {
 
 const isDesktop = typeof window !== 'undefined' && !!window.desktop;
 
+/* Свёрнутое приложение (браузер: своего окна нет, поэтому сворачиваем
+   интерфейс в плашку — музыка продолжает играть, плашка возвращает всё назад). */
+function MinimizedBar() {
+  const restore = useStore((s) => s.restoreApp);
+  const track = useStore((s) => s.current());
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') restore(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [restore]);
+
+  return (
+    <div className="minbar">
+      <button className="minbar-btn" onClick={restore} title="Развернуть приложение" data-testid="app-restore">
+        <span className="minbar-ic" aria-hidden="true">▶</span>
+        <span className="minbar-txt">
+          <b>Spotidrome</b>
+          <i>{track ? `${track.title} — ${track.artist}` : 'приложение свёрнуто'}</i>
+        </span>
+        <span className="minbar-hint">Развернуть</span>
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const booted = useStore((s) => s.booted);
   const connected = useStore((s) => s.connected);
@@ -137,7 +164,11 @@ export default function App() {
   const eqOpen = useStore((s) => s.eqOpen);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const aboutOpen = useStore((s) => s.aboutOpen);
+  const addToOpen = useStore((s) => s.addToOpen);
+  const contextMenu = useStore((s) => s.contextMenu);
+  const dice = useStore((s) => s.dice);
   const miniForced = useStore((s) => s.miniForced);
+  const appMinimized = useStore((s) => s.appMinimized);
   const layoutOpen = useStore((s) => s.layoutOpen);
   const { layout } = useCompact();
   const ui = useUiLayout();
@@ -152,9 +183,25 @@ export default function App() {
     return () => { delete el.dataset.layout; };
   }, [layout]);
 
+  /* Пока поверх интерфейса лежит что-то полноэкранное (плеер во весь экран,
+     настройки, эквалайзер…), верхняя панель не должна таскать окно.
+     В Electron её `-webkit-app-region: drag` живёт на уровне окна: клики в этой
+     полосе уходят системе на перетаскивание и до кнопок просто не доходят —
+     в браузере этого нет, поэтому баг виден только в собранном приложении. */
+  const overlayOpen = nowPlayingOpen || eqOpen || settingsOpen || aboutOpen || layoutOpen
+    || !!addToOpen || !!contextMenu || !!dice;
+  useEffect(() => {
+    const el = document.documentElement;
+    el.dataset.overlay = overlayOpen ? 'on' : 'off';
+    return () => { delete el.dataset.overlay; };
+  }, [overlayOpen]);
+
   if (!booted) {
     return <div className="login"><div className="spinner" /></div>;
   }
+
+  /* «свернуть приложение» — в браузере это единственный способ убрать всё с экрана */
+  if (appMinimized) return <MinimizedBar />;
 
   /* окно ужато до размера плеера — показываем только плеер */
   if (connected && layout !== 'full') {

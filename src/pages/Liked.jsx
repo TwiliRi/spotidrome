@@ -58,10 +58,20 @@ export default function Liked() {
       </div>
 
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => (isHere ? togglePlay() : playQueue(songs, 0, { type: 'liked', name: 'Любимые треки' }))}>
+        <button
+          className="play-fab"
+          title={isHere && playing ? 'Пауза' : 'Слушать любимые треки'}
+          aria-label={isHere && playing ? 'Пауза' : 'Слушать любимые треки'}
+          onClick={() => (isHere ? togglePlay() : playQueue(songs, 0, { type: 'liked', name: 'Любимые треки' }))}
+        >
           {isHere && playing ? <Pause size={22} /> : <Play size={22} />}
         </button>
-        <button className={`ghost-btn${shuffle ? ' on' : ''}`} onClick={toggleShuffle}><Shuffle size={26} /></button>
+        <button
+          className={`ghost-btn${shuffle ? ' on' : ''}`}
+          title={shuffle ? 'Перемешивание включено' : 'Перемешать'}
+          aria-label={shuffle ? 'Перемешивание включено' : 'Перемешать'}
+          onClick={toggleShuffle}
+        ><Shuffle size={26} /></button>
       </div>
 
       <div className="page">

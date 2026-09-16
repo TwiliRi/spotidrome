@@ -5,17 +5,20 @@ import { AUTODJ_MODES } from '../lib/autodj';
 import api from '../lib/api';
 import { useCoverSrc } from '../lib/covers';
 import engine from '../lib/audio';
-import { Cover, Slider } from './UI';
+import { Cover, Slider, Switch } from './UI';
 import ArtistLinks, { useArtistMenuItems, useArtistList } from './ArtistLinks';
 import { resolveArtistId } from '../lib/artists';
 import { volumeLabel } from '../lib/audio';
-import { useDominantColor, fmt, songsWord } from '../lib/util';
+import { useDominantColor, fmt, songsWord, albumsWord } from '../lib/util';
 import {
   Play, Pause, Next, Prev, Shuffle, Repeat, RepeatOne, Heart, HeartFill, Collapse, Plus,
   QueueIc, MicIc, VolHigh, VolLow, VolMute, Sliders, Download, Check, DotsH, Expand, ArtistIc,
   ThumbDown, ThumbDownFill, SyncIc, Minus, TimeIc, FolderIc, Share,
 } from './Icons';
 import { shareTrackPage } from '../lib/trackPage';
+import { linkProps } from '../lib/uiA11y';
+
+const desktop = typeof window !== 'undefined' ? window.desktop : null;
 
 /* ---------------- canvas-визуализатор ---------------- */
 function Visualizer({ accent }) {
@@ -268,7 +271,7 @@ function QueuePane() {
   return (
     <div className="np2-list">
       <div className="np2-dj">
-        <div className={`switch sm${dj.enabled ? ' on' : ''}`} onClick={toggleAutoDj}><i /></div>
+        <Switch sm on={dj.enabled} onClick={toggleAutoDj} label="AutoDJ" />
         <div className="np2-dj-t">
           <b>AutoDJ</b>
           <span>{dj.enabled ? (autodjBusy ? 'подбираю треки…' : 'очередь продолжается сама') : 'очередь закончится последним треком'}</span>
@@ -365,7 +368,7 @@ function ArtistPane({ track, onClose }) {
         <div style={{ minWidth: 0 }}>
           <h4>{state.artist.name}</h4>
           <div style={{ color: 'rgba(255,255,255,.6)', fontSize: 13, marginTop: 4 }}>
-            {state.albums.length} альбомов{state.artist.genre ? ` · ${state.artist.genre}` : ''}
+            {albumsWord(state.albums.length)}{state.artist.genre ? ` · ${state.artist.genre}` : ''}
           </div>
           <button
             className="pill-btn" style={{ marginTop: 10 }}
@@ -422,6 +425,7 @@ export default function NowPlaying() {
     shuffle, toggleShuffle, repeat, cycleRepeat, toggleStar, starredIds, settings,
     setVolume, toggleMute, offline, download, queue, index, context, addToQueue,
     dislike, undislike, toggleDislike, dislikedIds, setMusicFolder, toast,
+    minimizeApp,
   } = useStore();
 
   const track = current();
@@ -540,7 +544,23 @@ export default function NowPlaying() {
             <Share size={16} />
           </button>
           <button className="np2-icon" title="Ещё" onClick={openMore}><DotsH size={16} /></button>
-          <button className="np2-icon" title="Свернуть (Esc)" onClick={() => setUI({ nowPlayingOpen: false })}><Collapse size={16} /></button>
+          {/* свернуть всё приложение: в десктопе окно уходит в панель задач,
+              в браузере своего окна нет — интерфейс сворачивается в плашку */}
+          <button
+            className="np2-icon"
+            title="Свернуть приложение"
+            aria-label="Свернуть приложение"
+            data-testid="np2-minimize"
+            onClick={() => minimizeApp()}
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            className="np2-icon"
+            title="Выйти из полноэкранного режима (Esc)"
+            aria-label="Выйти из полноэкранного режима"
+            onClick={() => setUI({ nowPlayingOpen: false })}
+          ><Collapse size={16} /></button>
         </div>
       </div>
 
@@ -556,7 +576,10 @@ export default function NowPlaying() {
                 <div className="np2-title" title={track.title}>{track.title}</div>
                 <div className="np2-artist">
                   <ArtistLinks as="span" item={track} onNavigate={() => setUI({ nowPlayingOpen: false })} />
-                  {track.album && <> · <span onClick={() => { setUI({ nowPlayingOpen: false }); track.albumId && nav(`/album/${track.albumId}`); }}>{track.album}</span></>}
+                  {track.album && <> · <span
+                    style={{ cursor: track.albumId ? 'pointer' : 'default' }}
+                    {...linkProps(() => { setUI({ nowPlayingOpen: false }); if (track.albumId) nav(`/album/${track.albumId}`); }, !!track.albumId)}
+                  >{track.album}</span></>}
                 </div>
                 <div className="np2-tags">
                   {folder && (

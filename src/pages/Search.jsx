@@ -127,7 +127,11 @@ export default function Search() {
               key={g.value}
               onClick={() => nav(`/genre/${encodeURIComponent(g.value)}`)}
               style={{
-                background: GENRE_COLORS[i % GENRE_COLORS.length], borderRadius: 8, height: 160,
+                /* цвет жанра + тёмная подложка: на светлых карточках (#ff4632,
+                   #509bf5) белый текст без неё не читается */
+                backgroundColor: GENRE_COLORS[i % GENRE_COLORS.length],
+                backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,.34))',
+                borderRadius: 8, height: 160,
                 position: 'relative', overflow: 'hidden', textAlign: 'left', padding: 16,
                 fontSize: 20, fontWeight: 800, letterSpacing: '-.02em',
               }}
@@ -137,8 +141,8 @@ export default function Search() {
                 position: 'absolute', right: -14, bottom: -6, width: 82, height: 82, borderRadius: 6,
                 background: 'rgba(0,0,0,.35)', transform: 'rotate(25deg)',
               }} />
-              <span style={{ position: 'absolute', left: 16, bottom: 12, fontSize: 12, fontWeight: 600, opacity: .8 }}>
-                {g.songCount} треков
+              <span style={{ position: 'absolute', left: 16, bottom: 12, fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.92)' }}>
+                {songsWord(g.songCount)}
               </span>
             </button>
           ))}

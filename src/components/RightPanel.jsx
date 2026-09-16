@@ -4,6 +4,7 @@ import useStore from '../state/store';
 import Splitter from './Splitter';
 import ArtistLinks from './ArtistLinks';
 import { Cover } from './UI';
+import { Switch } from './UI';
 import { Close, Trash, Play, RadioIc, Plus } from './Icons';
 import { AUTODJ_MODES, modeName } from '../lib/autodj';
 
@@ -59,7 +60,7 @@ function AutoDjPanel() {
 
           <div className="dj-row">
             <span className="muted">Не повторять недавнее</span>
-            <div className={`switch sm${dj.noRepeat ? ' on' : ''}`} onClick={() => setAutoDj({ noRepeat: !dj.noRepeat })}><i /></div>
+            <Switch sm on={dj.noRepeat} onClick={() => setAutoDj({ noRepeat: !dj.noRepeat })} label="Не повторять недавнее" />
           </div>
 
           <button className="dj-more" disabled={autodjBusy} onClick={() => autoDjRefill('more')}>
@@ -98,7 +99,7 @@ export default function RightPanel() {
         <span>Очередь</span>
         <div style={{ display: 'flex', gap: 4 }}>
           {queue.length > 0 && <button className="icon-btn" title="Очистить" onClick={clearQueue}><Trash size={14} /></button>}
-          <button className="icon-btn" onClick={() => setUI({ queueOpen: false })}><Close size={14} /></button>
+          <button className="icon-btn" onClick={() => setUI({ queueOpen: false })} title="Свернуть очередь" aria-label="Свернуть очередь"><Close size={14} /></button>
         </div>
       </div>
 
@@ -118,7 +119,7 @@ export default function RightPanel() {
             <div className="rb-section-title">Сейчас играет</div>
             <div className="q-row cur">
               <Cover id={cur.coverArt || cur.albumId} size={80} alt="" />
-              <div className="m"><div className="n">{cur.title}</div><div className="s">{cur.artist}</div></div>
+              <div className="m"><div className="n" title={cur.title}>{cur.title}</div><div className="s" title={cur.artist}>{cur.artist}</div></div>
               {cur._dj && <span className="dj-tag" title={`Подобрано AutoDJ · ${modeName(cur._dj)}`}><RadioIc size={9} /></span>}
             </div>
 
@@ -140,8 +141,8 @@ export default function RightPanel() {
                 >
                   <Cover id={t.coverArt || t.albumId} size={80} alt="" />
                   <div className="m">
-                    <div className="n">{t.title}</div>
-                    <div className="s">{t.artist}</div>
+                    <div className="n" title={t.title}>{t.title}</div>
+                    <div className="s" title={t.artist}>{t.artist}</div>
                   </div>
                   {t._dj && <span className="dj-tag" title={`Подобрано AutoDJ · ${modeName(t._dj)}`}><RadioIc size={9} /></span>}
                   <button className="icon-btn" title="Играть" onClick={() => jumpTo(realIndex)}><Play size={12} /></button>

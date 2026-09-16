@@ -5,7 +5,7 @@ import { useCoverSrc } from '../lib/covers';
 import useStore from '../state/store';
 import TrackList from '../components/TrackList';
 import { Cover, Spinner, Card, Section } from '../components/UI';
-import { Play, Pause, Heart, HeartFill, DotsH } from '../components/Icons';
+import { Play, Pause, Heart, HeartFill, DotsH, Ban, Check } from '../components/Icons';
 import { useDominantColor, albumsWord, stripHtml } from '../lib/util';
 import { rememberArtist } from '../lib/artists';
 
@@ -21,11 +21,16 @@ export default function Artist() {
   const setUI = useStore((s) => s.setUI);
   const addToQueue = useStore((s) => s.addToQueue);
   const startRadio = useStore((s) => s.startRadio);
+  const toggleArtistBan = useStore((s) => s.toggleArtistBan);
   const [data, setData] = useState(null);
   const [top, setTop] = useState([]);
   const [info, setInfo] = useState(null);
   const [showAll, setShowAll] = useState(false);
 
+  const artistName = String(data?.artist?.name || '').trim();
+  /* селектор, а не вызов функции: zustand сам сравнит результат и перерисует
+     кнопку, когда список заблокированных изменится */
+  const banned = useStore((s) => s.isArtistBanned({ id, name: artistName }));
   const coverSrc = useCoverSrc(data ? (data.artist.coverArt || data.artist.id) : null, 400);
   const hero = useDominantColor(coverSrc, '#3f3f3f');
   useEffect(() => { setUI({ heroColor: hero }); }, [hero, setUI]);
@@ -93,13 +98,35 @@ export default function Artist() {
       </div>
 
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => (curIsHere && playing ? togglePlay() : playAll())}>
+        <button
+          className="play-fab"
+          title={curIsHere && playing ? 'Пауза' : 'Слушать исполнителя'}
+          aria-label={curIsHere && playing ? 'Пауза' : 'Слушать исполнителя'}
+          onClick={() => (curIsHere && playing ? togglePlay() : playAll())}
+        >
           {curIsHere && playing ? <Pause size={22} /> : <Play size={22} />}
         </button>
-        <button className={`ghost-btn${isStar ? ' on' : ''}`} onClick={() => toggleStar(artist, 'artist')}>
+        <button
+          className={`ghost-btn${isStar ? ' on' : ''}`}
+          title={isStar ? 'Убрать из любимых' : 'В любимые'}
+          aria-label={isStar ? 'Убрать из любимых' : 'В любимые'}
+          onClick={() => toggleStar(artist, 'artist')}
+        >
           {isStar ? <HeartFill size={30} /> : <Heart size={30} />}
         </button>
         <button className="pill-btn" onClick={() => addToQueue(top)}>В очередь</button>
+        <button
+          className={`pill-btn${banned ? ' on' : ''}`}
+          title={banned
+            ? 'Исполнитель заблокирован: его треки не приходят в AutoDJ, радио и случайный выбор'
+            : 'Заблокировать исполнителя: его треки перестанут попадаться в подборках'}
+          onClick={() => toggleArtistBan({ id, name: artistName })}
+        >
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {banned ? <Check size={14} /> : <Ban size={14} />}
+            {banned ? 'Заблокирован' : 'Заблокировать'}
+          </span>
+        </button>
         <button
           className="pill-btn"
           title="Играть радио на основе этого исполнителя"

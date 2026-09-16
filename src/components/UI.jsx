@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play } from './Icons';
+import { linkProps } from '../lib/uiA11y';
 import api from '../lib/api';
 import { useCoverSrc, remoteCover, invalidateCover } from '../lib/covers';
+import { songsWord } from '../lib/util';
 
 /* -------- Slider --------
  * onChange — «живое» значение: зовётся сразу при нажатии и во время перетаскивания
@@ -11,7 +13,7 @@ import { useCoverSrc, remoteCover, invalidateCover } from '../lib/covers';
  * bubble   — функция value → подпись во всплывающей подсказке;
  * wheelStep— шаг колёсика мыши (доля от max).
  */
-export function Slider({ value, max = 1, onChange, onCommit, className = '', bubble, wheelStep = 0, step = 0 }) {
+export function Slider({ value, max = 1, onChange, onCommit, className = '', bubble, wheelStep = 0, step = 0, label }) {
   const ref = useRef(null);
   const [drag, setDrag] = useState(false);
   const [temp, setTemp] = useState(null);
@@ -83,23 +85,49 @@ export function Slider({ value, max = 1, onChange, onCommit, className = '', bub
     return () => el.removeEventListener('wheel', stop);
   }, [wheelStep]);
 
-  const label = bubble ? bubble(val) : null;
+  /* стрелки и Home/End: ползунок должен двигаться и без мыши */
+  const onKeyDown = (e) => {
+    const big = max / 20;                        // шаг «стрелка» — 5% шкалы
+    const small = step || max / 100;
+    const to = { ArrowRight: big, ArrowUp: big, ArrowLeft: -big, ArrowDown: -big }[e.key];
+    let next = null;
+    if (to != null) next = val + to;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = max;
+    else if (e.key === 'PageUp') next = val + big * 4;
+    else if (e.key === 'PageDown') next = val - big * 4;
+    if (next == null) return;
+    e.preventDefault();
+    const v = Math.max(0, Math.min(max, step > 0 ? Math.round(next / small) * small : next));
+    onChange?.(v);
+    (onCommit && onCommit !== onChange) ? onCommit(v) : onChange?.(v);
+  };
+
+  const tip = bubble ? bubble(val) : null;
 
   return (
     <div
       className={`slider ${className}${drag ? ' dragging' : ''}`}
       ref={ref}
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={Math.round(val * 100) / 100}
+      aria-valuetext={tip || undefined}
       onPointerDown={start}
       onPointerMove={move}
       onPointerUp={end}
       onPointerCancel={end}
       onWheel={onWheel}
+      onKeyDown={onKeyDown}
       style={{ touchAction: 'none' }}
     >
       <div className="track" />
       <div className="fill" style={{ width: `${pct}%`, background: drag ? 'var(--green)' : undefined }} />
       <div className="knob" style={{ left: `${pct}%`, opacity: drag ? 1 : undefined }} />
-      {label != null && <div className="bubble" style={{ left: `${pct}%` }}>{label}</div>}
+      {tip != null && <div className="bubble" style={{ left: `${pct}%` }}>{tip}</div>}
     </div>
   );
 }
@@ -141,13 +169,32 @@ export function placeholder(label = '') {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
+/* -------- Switch --------
+   Раньше тумблером был <div> с onClick — мышкой щёлкалось, а с клавиатуры
+   попасть было нельзя. Теперь это настоящая кнопка с ролью переключателя. */
+export function Switch({ on, onClick, label, sm = false, className = '' }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!!on}
+      aria-label={label}
+      title={label}
+      className={`switch${sm ? ' sm' : ''}${on ? ' on' : ''} ${className}`.trim()}
+      onClick={onClick}
+    >
+      <i />
+    </button>
+  );
+}
+
 /* -------- Card -------- */
 export function Card({ item, kind = 'album', onPlay, onContextMenu, sub: subOverride, drag, dropClass = '' }) {
   const nav = useNavigate();
   const to = kind === 'artist' ? `/artist/${item.id}` : kind === 'playlist' ? `/playlist/${item.id}` : `/album/${item.id}`;
   const sub = kind === 'artist' ? 'Исполнитель'
-    : kind === 'playlist' ? (item.comment || `${item.songCount || 0} треков`)
-    : [item.year, item.artist].filter(Boolean).join(' • ');
+    : kind === 'playlist' ? (item.comment || songsWord(item.songCount || 0))
+    : [item.year, item.artist].filter(Boolean).join(' • ');   // у альбома: год • исполнитель
   return (
     <div
       className={`card${dropClass ? ` ${dropClass}` : ''}`}
@@ -179,7 +226,7 @@ export function Section({ title, onTitleClick, more, onMore, children }) {
   return (
     <section className="section">
       <div className="section-head">
-        <h2 onClick={onTitleClick} style={{ cursor: onTitleClick ? 'pointer' : 'default' }}>{title}</h2>
+        <h2 {...linkProps(onTitleClick, !!onTitleClick)} style={{ cursor: onTitleClick ? 'pointer' : 'default' }}>{title}</h2>
         {more && <button className="more" onClick={onMore}>{more}</button>}
       </div>
       {children}

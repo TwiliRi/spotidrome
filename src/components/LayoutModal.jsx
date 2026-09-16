@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import useStore, { DEFAULT_UI, UI_PRESETS } from '../state/store';
 import { clampUi } from '../lib/uiLayout';
 import { Close, DragIc, EyeIc, EyeOffIc, Trash } from './Icons';
+import { Switch } from './UI';
+import { useModalFocus } from '../lib/uiA11y';
 
 /* какие кнопки живут в правой части нижнего плеера */
 export const BAR_BUTTONS = [
@@ -55,9 +57,6 @@ const Seg = ({ options, value, onChange }) => (
   </div>
 );
 
-const Switch = ({ on, onClick }) => (
-  <button className={`switch${on ? ' on' : ''}`} onClick={onClick}><i /></button>
-);
 
 /* --- список кнопок плеера: порядок мышью + показать/скрыть --- */
 function BarButtons({ ui, setUi }) {
@@ -121,12 +120,14 @@ export default function LayoutModal() {
   const leftHidden = new Set(ui.leftHidden || []);
 
   const close = () => setUI({ layoutOpen: false });
+  const ref = useRef(null);
+  useModalFocus(ref, { onClose: close });      // Esc и Tab внутри окна
   const presetActive = Object.entries(UI_PRESETS).find(([, p]) =>
     Object.entries(p).every(([k, v]) => ui[k] === v))?.[0];
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal lay-modal">
+      <div className="modal lay-modal" ref={ref} tabIndex={-1}>
         <div className="lay-head">
           <div>
             <h3>Интерфейс и раскладка</h3>
@@ -135,7 +136,7 @@ export default function LayoutModal() {
               просто тянуть мышью прямо в окне, двойной клик по границе — сброс.
             </div>
           </div>
-          <button className="icon-btn" onClick={close}><Close size={14} /></button>
+          <button className="icon-btn" onClick={close} title="Закрыть" aria-label="Закрыть"><Close size={14} /></button>
         </div>
 
         <div className="lay-body">
@@ -201,7 +202,7 @@ export default function LayoutModal() {
                 <div className="lbl">Показывать медиатеку</div>
                 <div className="hint">Выключите, если нужен максимум места под контент</div>
               </div>
-              <Switch on={ui.showSidebar} onClick={() => setUi({ showSidebar: !ui.showSidebar })} />
+              <Switch on={ui.showSidebar} onClick={() => setUi({ showSidebar: !ui.showSidebar })} label="Показывать медиатеку" />
             </div>
             <div className="row">
               <div>
@@ -211,14 +212,14 @@ export default function LayoutModal() {
                   кнопкой «‹» в шапке медиатеки или если утянуть её границу до упора
                 </div>
               </div>
-              <Switch on={ui.sidebarCollapsed} onClick={() => useStore.getState().toggleSidebar()} />
+              <Switch on={ui.sidebarCollapsed} onClick={() => useStore.getState().toggleSidebar()} label="Медиатека свёрнута" />
             </div>
             <div className="row">
               <div>
                 <div className="lbl">Показывать верхнюю панель</div>
                 <div className="hint">Поиск и навигация сверху</div>
               </div>
-              <Switch on={ui.showTitlebar} onClick={() => setUi({ showTitlebar: !ui.showTitlebar })} />
+              <Switch on={ui.showTitlebar} onClick={() => setUi({ showTitlebar: !ui.showTitlebar })} label="Показывать верхнюю панель" />
             </div>
           </div>
 

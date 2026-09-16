@@ -78,9 +78,11 @@ const SOURCES = { similar: fromSimilar, artist: fromArtist, genre: fromGenre, st
  * @param {object?}  o.seed     текущий трек (затравка)
  * @param {number}   o.need     сколько треков нужно
  * @param {Set}      o.exclude  id, которые брать нельзя (очередь + недавние)
+ * @param {Function?} o.reject  доп. проверка трека (например, заблокированный
+ *                              исполнитель) — вызывается и в отборе, и в доборе
  * @returns {Promise<Array>} треки
  */
-export async function pickAutoDj({ api, mode = 'mix', seed = null, need = 5, exclude = new Set() }) {
+export async function pickAutoDj({ api, mode = 'mix', seed = null, need = 5, exclude = new Set(), reject = null }) {
   const want = Math.max(1, need);
   let pool = [];
 
@@ -106,11 +108,12 @@ export async function pickAutoDj({ api, mode = 'mix', seed = null, need = 5, exc
   const seen = new Set();
   const out = [];
   const artistCount = new Map();
+  const banned = (t) => !!(reject && reject(t));
   const seedArtist = (seed?.artist || '').toLowerCase();
   const limitPerArtist = mode === 'artist' ? want : Math.max(2, Math.ceil(want / 2));
 
   for (const t of shuffle(pool)) {
-    if (!t?.id || seen.has(t.id) || exclude.has(t.id)) continue;
+    if (!t?.id || seen.has(t.id) || exclude.has(t.id) || banned(t)) continue;
     const a = (t.artist || '').toLowerCase();
     const used = artistCount.get(a) || 0;
     // не залипаем на одном исполнителе (кроме режима «Исполнитель»)
@@ -126,7 +129,7 @@ export async function pickAutoDj({ api, mode = 'mix', seed = null, need = 5, exc
   if (out.length < want) {
     for (const t of pool) {
       if (out.length >= want) break;
-      if (!t?.id || seen.has(t.id) || exclude.has(t.id)) continue;
+      if (!t?.id || seen.has(t.id) || exclude.has(t.id) || banned(t)) continue;
       seen.add(t.id);
       out.push(t);
     }

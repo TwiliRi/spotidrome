@@ -112,7 +112,7 @@ export default function Playlist() {
    * конца, чтобы удаление не сдвигало ещё не обработанные позиции.
    */
   const removeMany = async (list, rowIndexes = []) => {
-    const visible = useStore.getState().filterDisliked(songs);
+    const visible = useStore.getState().filterExcluded(songs);
     // номер строки в таблице → позиция в исходном списке (в таблице скрыты
     // исключённые треки). Идём по двум спискам параллельно: один и тот же трек
     // может лежать в плейлисте дважды, и удалить надо именно выделенную строку.
@@ -187,7 +187,12 @@ export default function Playlist() {
       </div>
 
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => (isHere ? togglePlay() : playQueue(songs, 0, { type: 'playlist', name: playlist.name }))}>
+        <button
+          className="play-fab"
+          title={isHere && playing ? 'Пауза' : 'Слушать плейлист'}
+          aria-label={isHere && playing ? 'Пауза' : 'Слушать плейлист'}
+          onClick={() => (isHere ? togglePlay() : playQueue(songs, 0, { type: 'playlist', name: playlist.name }))}
+        >
           {isHere && playing ? <Pause size={22} /> : <Play size={22} />}
         </button>
         <button className={`ghost-btn${shuffle ? ' on' : ''}`} onClick={toggleShuffle} title="Перемешать"><Shuffle size={26} /></button>
@@ -199,7 +204,7 @@ export default function Playlist() {
         >
           {pinned ? <PinFillIc size={24} /> : <PinIc size={24} />}
         </button>
-        <button className="ghost-btn" onClick={openMenu}><DotsH size={24} /></button>
+        <button className="ghost-btn" onClick={openMenu} title="Ещё" aria-label="Ещё"><DotsH size={24} /></button>
       </div>
 
       <div className="page">

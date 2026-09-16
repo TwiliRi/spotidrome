@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { linkProps } from '../lib/uiA11y';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../state/store';
 import api from '../lib/api';
@@ -167,11 +168,12 @@ export default function Recent() {
         <div className="cell-title">
           <Cover id={t.coverArt || t.albumId} size={80} alt={t.album || t.title} />
           <div style={{ minWidth: 0 }}>
-            <div className="t-name">{t.title}</div>
-            <div className="t-artist"><ArtistLinks as="span" item={t} /></div>
+            {/* название и исполнитель на узком окне обрезаются — подсказка объясняет, что там */}
+            <div className="t-name" title={t.title}>{t.title}</div>
+            <div className="t-artist" title={t.artist}><ArtistLinks as="span" item={t} /></div>
           </div>
         </div>
-        <div className="ellipsis" onClick={() => t.albumId && nav(`/album/${t.albumId}`)} style={{ cursor: t.albumId ? 'pointer' : 'default' }}>
+        <div className="ellipsis" {...linkProps(() => { if (t.albumId) nav(`/album/${t.albumId}`); }, !!t.albumId)} style={{ cursor: t.albumId ? 'pointer' : 'default' }}>
           {t.album}
         </div>
         <div className="ellipsis muted" title={`${new Date(t.at).toLocaleString('ru-RU')}${t.context ? ` · ${t.context}` : ''}`}>

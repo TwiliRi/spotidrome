@@ -37,7 +37,12 @@ export default function Offline() {
       </div>
 
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => tracks.length && playQueue(tracks, 0, { type: 'offline', name: 'Офлайн' })}><Play size={22} /></button>
+        <button
+          className="play-fab"
+          title="Слушать офлайн-кэш"
+          aria-label="Слушать офлайн-кэш"
+          onClick={() => tracks.length && playQueue(tracks, 0, { type: 'offline', name: 'Офлайн' })}
+        ><Play size={22} /></button>
         {!!tracks.length && (
           <button className="pill-btn" onClick={clearDownloads}>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Trash size={13} /> Очистить кэш</span>

@@ -117,7 +117,12 @@ export default function Album() {
       </div>
 
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => (isCurAlbum ? togglePlay() : playQueue(songs, 0, { type: 'album', name: album.name }))}>
+        <button
+          className="play-fab"
+          title={isCurAlbum && playing ? 'Пауза' : 'Слушать альбом'}
+          aria-label={isCurAlbum && playing ? 'Пауза' : 'Слушать альбом'}
+          onClick={() => (isCurAlbum ? togglePlay() : playQueue(songs, 0, { type: 'album', name: album.name }))}
+        >
           {isCurAlbum && playing ? <Pause size={22} /> : <Play size={22} />}
         </button>
         <button className={`ghost-btn${isStar ? ' on' : ''}`} onClick={() => toggleStar(album, 'album')} title="В любимые">

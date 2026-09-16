@@ -465,7 +465,13 @@ ipcMain.handle('cover:clear', async () => {
 });
 
 ipcMain.handle('win:toggleFullscreen', () => { if (win) win.setFullScreen(!win.isFullScreen()); });
-ipcMain.handle('win:minimize', () => win && win.minimize());
+/* из полноэкранного режима окно сворачивается только после выхода из него:
+   иначе (прежде всего на macOS) вызов просто игнорируется */
+ipcMain.handle('win:minimize', () => {
+  if (!win) return;
+  if (win.isFullScreen()) win.setFullScreen(false);
+  win.minimize();
+});
 ipcMain.handle('win:maximizeToggle', () => {
   if (!win) return false;
   if (win.isMaximized()) win.unmaximize(); else win.maximize();

@@ -3,6 +3,7 @@ import useStore from '../state/store';
 import { Cover } from './UI';
 import { Close, Search, Plus, Check, PinFillIc } from './Icons';
 import { songsWord } from '../lib/util';
+import { useModalFocus } from '../lib/uiA11y';
 
 /**
  * «Добавить в плейлист» — общий выбор для любого места приложения.
@@ -22,6 +23,8 @@ export default function AddToPlaylist() {
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState([]);
   const inputRef = useRef(null);
+  const ref = useRef(null);
+  useModalFocus(ref, { onClose: () => setUI({ addToOpen: null }), open: !!addToOpen });   // Esc и Tab внутри окна
 
   const open = !!addToOpen;
   const ids = addToOpen?.ids || [];
@@ -73,13 +76,13 @@ export default function AddToPlaylist() {
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setUI({ addToOpen: null })}>
-      <div className="modal atp" style={{ width: 460 }}>
+      <div className="modal atp" ref={ref} tabIndex={-1} style={{ width: 460 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <h3 style={{ marginBottom: 4 }}>Добавить в плейлист</h3>
             <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{what}</div>
           </div>
-          <button className="icon-btn" onClick={() => setUI({ addToOpen: null })}><Close size={14} /></button>
+          <button className="icon-btn" onClick={() => setUI({ addToOpen: null })} title="Закрыть" aria-label="Закрыть"><Close size={14} /></button>
         </div>
 
         <div className="search-box atp-search">

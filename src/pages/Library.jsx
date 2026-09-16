@@ -6,6 +6,7 @@ import { Card, Skeletons } from '../components/UI';
 import usePlaylistDnd from '../lib/usePlaylistDnd';
 import usePagedList from '../lib/usePagedList';
 import { albumsWord } from '../lib/util';
+import { songsWord } from '../lib/util';
 
 const TABS = [
   { id: 'albums', label: 'Альбомы' },
@@ -138,7 +139,7 @@ export default function Library() {
                 key={p.id}
                 item={p}
                 kind="playlist"
-                sub={`${p.owner} • ${p.songCount || 0} треков`}
+                sub={`${p.owner} • ${songsWord(p.songCount || 0)}`}
                 drag={dnd.dndProps({ id: p.id, kind: 'playlist', group: 'shared' })}
                 dropClass={dnd.dndClass({ id: p.id, kind: 'playlist', group: 'shared' })}
               />

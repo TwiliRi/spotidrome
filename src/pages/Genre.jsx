@@ -43,7 +43,12 @@ export default function Genre() {
         </div>
       </div>
       <div className="action-bar" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${hero} 45%, #121212), #121212 120px)` }}>
-        <button className="play-fab" onClick={() => playQueue(songs, 0, { type: 'genre', name: genre })}><Play size={22} /></button>
+        <button
+          className="play-fab"
+          title="Слушать жанр"
+          aria-label="Слушать жанр"
+          onClick={() => playQueue(songs, 0, { type: 'genre', name: genre })}
+        ><Play size={22} /></button>
       </div>
       <div className="page">
         <TrackList tracks={songs} context={{ type: 'genre', name: genre }} onReachEnd={loadMore} />

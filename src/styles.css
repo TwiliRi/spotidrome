@@ -73,6 +73,10 @@ input, textarea { font-family: inherit; }
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent); pointer-events: none;
 }
 .titlebar button, .titlebar input, .titlebar .no-drag { -webkit-app-region: no-drag; }
+/* поверх открыт полноэкранный слой — верхняя полоса перестаёт таскать окно,
+   иначе Electron съедает клики по кнопкам, попавшим в её прямоугольник */
+html[data-overlay='on'] .titlebar,
+html[data-overlay='on'] .titlebar * { -webkit-app-region: no-drag; }
 
 .tb-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .tb-nav { display: flex; gap: 6px; }
@@ -195,7 +199,7 @@ input, textarea { font-family: inherit; }
 .tb-avatar:hover { background: #3a3a3a; border-color: rgba(255,255,255,.25); }
 
 .tb-winbtns { display: flex; gap: 2px; margin-left: 6px; }
-.tb-winbtn { width: 42px; height: 34px; border-radius: 6px; display: grid; place-items: center; color: #b9b9b9; transition: .14s; }
+.tb-winbtn { width: 44px; height: 34px; flex: none; border-radius: 6px; display: grid; place-items: center; color: #b9b9b9; transition: .14s; }
 .tb-winbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
 .tb-winbtn.close:hover { background: #e81123; color: #fff; }
 
@@ -266,11 +270,15 @@ input, textarea { font-family: inherit; }
 /* hero header */
 .hero { position: relative; padding: 16px 24px 24px; display: flex; align-items: flex-end; gap: 24px; min-height: 320px; }
 .hero::before { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--hero, #333) 0%, rgba(18,18,18,.65) 70%, var(--panel) 100%); z-index: 0; }
-.hero > * { position: relative; z-index: 1; }
+.hero > * { position: relative; z-index: 1; min-width: 0; }
 .hero-art { width: 232px; height: 232px; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.6); object-fit: cover; flex: none; }
 .hero-art.round { border-radius: 50%; }
 .hero-kind { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-.hero-title { font-size: clamp(32px, 6vw, 88px); font-weight: 900; letter-spacing: -.04em; line-height: 1.05; margin: 8px 0 16px; }
+.hero-title {
+  font-size: clamp(32px, 6vw, 88px); font-weight: 900; letter-spacing: -.04em; line-height: 1.05; margin: 8px 0 16px;
+  /* длинное название («Исключённые треки») должно переноситься, а не уезжать за край */
+  overflow-wrap: anywhere;
+}
 .hero-title.sm { font-size: clamp(28px, 4vw, 48px); }
 .hero-sub { display: flex; align-items: center; gap: 6px; color: #fff; font-size: 14px; flex-wrap: wrap; }
 .hero-sub .dot { color: var(--text-sub); }
@@ -283,19 +291,29 @@ input, textarea { font-family: inherit; }
 .play-fab { width: 56px; height: 56px; border-radius: 50%; background: var(--green); color: #000; display: grid; place-items: center; box-shadow: 0 8px 16px rgba(0,0,0,.4); transition: transform .12s, background .12s; }
 .play-fab:hover { transform: scale(1.06); background: #22e065; }
 .play-fab.sm { width: 48px; height: 48px; }
-.ghost-btn { color: var(--text-sub); display: grid; place-items: center; transition: .15s; }
+.ghost-btn {
+  color: var(--text-sub); display: grid; place-items: center; transition: .15s;
+  min-width: 32px; min-height: 32px;              /* попасть мышкой в иконку 16 px было трудновато */
+}
+.ghost-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 6px; }
 .ghost-btn:hover { color: #fff; transform: scale(1.05); }
 .ghost-btn.on { color: var(--green); }
 .pill-btn { border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 16px; font-weight: 700; font-size: 13px; color: #fff; transition: .15s; }
 .pill-btn:hover { border-color: #fff; transform: scale(1.03); }
 .pill-btn.solid { background: #fff; color: #000; border-color: #fff; }
+.slider:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
 
 /* section */
 .section { margin-top: 32px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
 .section-head h2 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin: 0; }
 .section-head h2:hover { text-decoration: underline; cursor: pointer; }
-.section-head .more { font-size: 12px; font-weight: 700; color: var(--text-sub); text-transform: uppercase; letter-spacing: .05em; }
+.more {
+  font-size: 12px; font-weight: 700; color: var(--text-sub); text-transform: uppercase; letter-spacing: .05em;
+  padding: 6px 2px; border-radius: 4px;              /* выше, по ней проще попасть мышью */
+}
+.more:hover { color: #fff; text-decoration: underline; }
+.more:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .section-head .more:hover { color: #fff; text-decoration: underline; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 170px), 1fr)); gap: 8px; }
@@ -476,9 +494,15 @@ input, textarea { font-family: inherit; }
 .track-row.dis-row:hover { background: rgba(255,255,255,.06); }
 
 /* ---------------- right panel (queue / now playing) ---------------- */
-.rightbar { grid-area: right; background: var(--panel); border-radius: var(--radius-lg); overflow: hidden; display: flex; flex-direction: column; }
+.rightbar {
+  grid-area: right; background: var(--panel); border-radius: var(--radius-lg);
+  /* раньше здесь было overflow: hidden — он обрезал ручку, вынесенную за панель,
+     и тянуть было нечем: оставалась полоска в 1px. Теперь содержимое
+     подрезает сам список (.rb-body), а ручка живёт снаружи, как у медиатеки. */
+  overflow: visible; display: flex; flex-direction: column;
+}
 .rb-head { display: flex; align-items: center; justify-content: space-between; padding: 16px; font-weight: 700; }
-.rb-body { overflow-y: auto; padding: 0 12px 16px; flex: 1; }
+.rb-body { overflow-y: auto; padding: 0 12px 16px; flex: 1; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .rb-art { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; margin-bottom: 16px; }
 .rb-section-title { font-size: 13px; color: var(--text-sub); font-weight: 700; margin: 16px 8px 8px; }
 .q-row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 6px; cursor: pointer; }
@@ -492,6 +516,7 @@ input, textarea { font-family: inherit; }
 /* ---------------- now playing fullscreen (v2) ---------------- */
 .np2 {
   position: fixed; inset: 0; z-index: 200; overflow: hidden;
+  -webkit-app-region: no-drag;
   background: #060606; color: #fff; animation: fade .28s ease;
   display: grid; grid-template-rows: auto 1fr;
 }
@@ -523,12 +548,29 @@ input, textarea { font-family: inherit; }
 .np2-ctx .kind { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.6); }
 .np2-ctx .name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np2-top-actions { display: flex; align-items: center; gap: 6px; }
+/* Кнопка — квадрат 44×44, попадать в неё просто. Круглая подложка
+   нарисована слоем внутри, поэтому она не «съедает» углы хитбокса:
+   раньше круг был и границей клика, и мимо легко промахивались. */
 .np2-icon {
-  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
-  color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); transition: .18s;
+  position: relative; flex: none;
+  /* скругление в CSS — это ещё и граница клика, поэтому сама кнопка строго
+     квадратная: круг рисуется слоем ::before и попасть можно в любой угол */
+  width: 44px; height: 44px; border-radius: 0; display: grid; place-items: center;
+  color: rgba(255,255,255,.72); background: none; transition: color .18s;
 }
-.np2-icon:hover { color: #fff; background: rgba(255,255,255,.16); transform: scale(1.05); }
-.np2-icon.on { color: #000; background: var(--green); }
+.np2-icon::before {
+  content: ''; position: absolute; inset: 2px; border-radius: 50%;
+  background: rgba(255,255,255,.06); transition: background .18s, transform .18s;
+}
+.np2-icon > svg { position: relative; }
+.np2-icon:hover { color: #fff; }
+.np2-icon:hover::before { background: rgba(255,255,255,.16); transform: scale(1.05); }
+.np2-icon:focus-visible { outline: 2px solid #fff; outline-offset: -2px; border-radius: 12px; }
+.np2-icon.on { color: #000; }
+.np2-icon.on::before { background: var(--green); }
+.np2-icon:disabled { color: rgba(255,255,255,.45); cursor: default; }
+.np2-icon:disabled::before { transform: none; }
+.np2-icon.danger.on { color: #f5707a; }
 
 .np2-grid {
   display: grid; grid-template-columns: minmax(380px, 44%) 1fr; gap: 56px;
@@ -582,7 +624,11 @@ input, textarea { font-family: inherit; }
 .np2-times .slider .knob { width: 14px; height: 14px; }
 
 .np2-controls { display: flex; align-items: center; justify-content: center; gap: 22px; }
-.np2-btn { color: rgba(255,255,255,.75); display: grid; place-items: center; transition: .15s; }
+.np2-btn {
+  color: rgba(255,255,255,.75); display: grid; place-items: center; transition: .15s;
+  min-width: 32px; min-height: 32px;                 /* иконка 16 px — цель для мыши маленькая */
+}
+.np2-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 6px; }
 .np2-btn:hover { color: #fff; transform: scale(1.08); }
 .np2-btn.on { color: var(--green); }
 .np2-play {
@@ -629,7 +675,7 @@ input, textarea { font-family: inherit; }
 }
 .lyr-head .grow { flex: 1; }
 .lyr-head.immersive { border-bottom-color: rgba(255,255,255,.06); }
-.lyr-src em { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 600; color: rgba(255,255,255,.38); }
+.lyr-src em { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 600; color: rgba(255,255,255,.62); }
 .lyr-offset { display: flex; align-items: center; gap: 4px; }
 .lyr-btn, .lyr-val {
   display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px;
@@ -649,11 +695,12 @@ input, textarea { font-family: inherit; }
 .lyr::-webkit-scrollbar { width: 0; }
 .lyr p {
   font-size: clamp(19px, 1.7vw, 27px); font-weight: 800; letter-spacing: -.02em; line-height: 1.35;
-  color: rgba(255,255,255,.32); margin: 0 0 18px; cursor: pointer;
+  /* было .32 — на большом тексте это 2.75 по WCAG, строки читались с трудом */
+  color: rgba(255,255,255,.42); margin: 0 0 18px; cursor: pointer;
   transition: color .35s ease, opacity .35s, filter .35s, transform .35s;
 }
 .lyr p:hover { color: rgba(255,255,255,.7); }
-.lyr p.past { color: rgba(255,255,255,.28); }
+.lyr p.past { color: rgba(255,255,255,.38); }
 .lyr p.active {
   color: #fff; transform: translateX(4px);
   text-shadow: 0 0 34px color-mix(in srgb, var(--accent, #1db954) 65%, transparent);
@@ -737,7 +784,11 @@ input, textarea { font-family: inherit; }
 .modal .row .lbl { font-size: 14px; }
 .modal .row .hint { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
 
-.switch { width: 44px; height: 24px; border-radius: 999px; background: #555; position: relative; transition: .2s; flex: none; }
+.switch {
+  width: 44px; height: 24px; border-radius: 999px; background: #555; position: relative; transition: .2s; flex: none;
+  border: 0; padding: 0; cursor: pointer; -webkit-appearance: none; appearance: none; display: block;
+}
+.switch:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .switch.on { background: var(--green); }
 .switch i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .2s; }
 .switch.on i { left: 23px; }
@@ -789,9 +840,20 @@ select, .select {
 .badge.gray { background: #3e3e3e; color: #fff; }
 .dl-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--green); color: #000; display: grid; place-items: center; flex: none; }
 
+/* страховка на первые кадры, пока JS не выставил data-queue */
 @media (max-width: 1180px) {
-  .app.with-right { grid-template-columns: var(--sidebar-w) 1fr; grid-template-areas: "sidebar main" "player player"; }
-  .rightbar { display: none; }
+  html:not([data-queue]) .app.with-right,
+  html:not([data-queue]) .app.with-right.sb-left.q-right,
+  html:not([data-queue]) .app.with-right.sb-left.q-left,
+  html:not([data-queue]) .app.with-right.sb-right.q-right,
+  html:not([data-queue]) .app.with-right.sb-right.q-left {
+    grid-template-columns: var(--sidebar-w) 1fr; grid-template-areas: "title title" "sidebar main" "player player";
+  }
+  html:not([data-queue]) .app.no-sidebar.with-right.q-right,
+  html:not([data-queue]) .app.no-sidebar.with-right.q-left {
+    grid-template-columns: 1fr; grid-template-areas: "title" "main" "player";
+  }
+  html:not([data-queue]) .rightbar { display: none; }
 }
 @media (max-width: 900px) {
   .np-body { grid-template-columns: 1fr; }
@@ -1418,6 +1480,32 @@ body.grabbing { cursor: grabbing; user-select: none; }
 html[data-layout='mini'] .toasts { left: 8px; right: 8px; bottom: 8px; }
 html[data-layout='mini'] .toast { font-size: 12px; padding: 8px 10px; }
 
+/* ==================== свёрнутое приложение ====================
+   В браузере своего окна нет, поэтому «свернуть приложение» убирает весь
+   интерфейс и оставляет одну плашку: музыка играет, плашка возвращает всё.
+   ============================================================== */
+.minbar {
+  position: fixed; inset: 0; z-index: 400; background: #080808;
+  display: flex; align-items: flex-end; padding: 14px;
+}
+.minbar-btn {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 10px;
+  border-radius: 999px; background: #1f1f1f; color: #fff;
+  box-shadow: 0 10px 30px rgba(0,0,0,.55); transition: background .16s, transform .12s;
+}
+.minbar-btn:hover { background: #2a2a2a; transform: translateY(-1px); }
+.minbar-ic {
+  width: 26px; height: 26px; flex: none; border-radius: 50%;
+  background: var(--green); color: #000; display: grid; place-items: center; font-size: 9px;
+}
+.minbar-txt { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 46vw; }
+.minbar-txt b { font-size: 13px; }
+.minbar-txt i {
+  font-style: normal; font-size: 12px; color: var(--text-dim);
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.minbar-hint { font-size: 12px; color: var(--text-dim); border-left: 1px solid rgba(255,255,255,.14); padding-left: 12px; }
+
 /* ==================== раскладка: ручки и варианты ====================
    Границы панелей можно тянуть мышью; расположение и видимость панелей
    задаются в «Настройки → Интерфейс и раскладка».
@@ -1460,12 +1548,29 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 .app.with-right.sb-right.q-right { grid-template-columns: 1fr var(--rightbar-w) var(--sidebar-w); grid-template-areas: "title title title" "main right sidebar" "player player player"; }
 .app.with-right.sb-right.q-left { grid-template-columns: var(--rightbar-w) 1fr var(--sidebar-w); grid-template-areas: "title title title" "right main sidebar" "player player player"; }
 
+/* --- очередь не вписалась в окно: убираем панель и её колонку, чтобы
+       справа не оставалась пустая (чёрная) полоса во весь экран --- */
+html[data-queue="off"] .rightbar { display: none; }
+html[data-queue="off"] .app.with-right,
+html[data-queue="off"] .app.with-right.sb-left.q-right,
+html[data-queue="off"] .app.with-right.sb-left.q-left,
+html[data-queue="off"] .app.with-right.sb-right.q-right,
+html[data-queue="off"] .app.with-right.sb-right.q-left {
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-areas: "title title" "sidebar main" "player player";
+}
+html[data-queue="off"] .app.no-sidebar.with-right.q-right,
+html[data-queue="off"] .app.no-sidebar.with-right.q-left {
+  grid-template-columns: 1fr;
+  grid-template-areas: "title" "main" "player";
+}
+
 /* --- панели можно спрятать целиком --- */
 .app.no-sidebar { grid-template-columns: 1fr; grid-template-areas: "title" "main" "player"; }
 .app.no-sidebar.with-right.q-right { grid-template-columns: 1fr var(--rightbar-w); grid-template-areas: "title title" "main right" "player player"; }
 .app.no-sidebar.with-right.q-left { grid-template-columns: var(--rightbar-w) 1fr; grid-template-areas: "title title" "right main" "player player"; }
 .titlebar.minimal { padding: 0 6px 0 12px; }
-.titlebar.minimal .tb-winbtn { height: 26px; }
+.titlebar.minimal .tb-winbtn { height: 30px; }
 
 /* ==================== модалка «Интерфейс и раскладка» ==================== */
 .lay-modal { width: min(720px, calc(94 * var(--vw))); max-height: calc(88 * var(--vh)); display: flex; flex-direction: column; gap: 0; }
@@ -1876,7 +1981,7 @@ body.resizing-x .app, body.resizing-y .app { transition: none; }
 
 .pl-folder {
   display: inline-flex; align-items: center; gap: 5px; max-width: 200px; margin-top: 3px;
-  padding: 2px 8px 2px 6px; border-radius: 999px; border: 1px solid var(--line);
+  padding: 7px 10px 7px 8px; border-radius: 999px; border: 1px solid var(--line);
   font-size: 10px; font-weight: 700; letter-spacing: .03em;
   background: rgba(255,255,255,.05); color: var(--text-sub);
   transition: background .15s, color .15s, border-color .15s;
@@ -1999,3 +2104,153 @@ body.resizing-x .app, body.resizing-y .app { transition: none; }
   text-align: center; font-size: 13px; padding: 14px 0 34px;
 }
 .paged-more { opacity: .75; }
+
+/* =================== экран «Статистика» ===================
+   Цифры считает src/lib/stats.js по локальной истории прослушиваний.
+   Акцент всего экрана — доминантный цвет обложки главного исполнителя,
+   поэтому все подложки и графики красятся через var(--accent). */
+.stats-page { --accent: #4a3fa0; }
+
+.stats-hero-text { flex: 1 1 auto; min-width: 0; }
+.stats-hero-num { flex: none; text-align: right; padding-bottom: 10px; }
+.shn-value {
+  display: flex; align-items: baseline; justify-content: flex-end; gap: 2px;
+  font-size: clamp(34px, 4.4vw, 62px); font-weight: 900; letter-spacing: -.04em; line-height: 1;
+  text-shadow: 0 6px 40px rgba(0, 0, 0, .45);
+}
+.shn-value b { font-weight: 900; }
+.shn-unit {
+  font-size: .38em; font-weight: 800; letter-spacing: 0;
+  color: rgba(255, 255, 255, .74); margin: 0 6px 0 3px;
+}
+.shn-cap {
+  margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+  color: rgba(255, 255, 255, .7);
+}
+
+.stats-wrap { display: flex; flex-direction: column; gap: 18px; }
+
+/* ---------- крупные числа ---------- */
+.stats-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.stat-card {
+  position: relative; overflow: hidden; padding: 16px 18px 18px;
+  border-radius: 14px; border: 1px solid var(--line);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 34%, var(--panel-2)) 0%, var(--panel-2) 72%);
+}
+.stat-card::after {                       /* мягкий свет из дальнего угла */
+  content: ''; position: absolute; right: -30px; top: -40px; width: 140px; height: 140px;
+  border-radius: 50%; background: var(--accent); opacity: .18; filter: blur(30px); pointer-events: none;
+}
+.sc-icon { color: color-mix(in srgb, var(--accent) 60%, #fff); margin-bottom: 10px; }
+.sc-value { font-size: 30px; font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
+.sc-cap { margin-top: 4px; font-size: 13px; color: var(--text-sub); }
+.sc-sub { margin-top: 3px; font-size: 12px; color: var(--text-sub); }
+
+/* ---------- блоки ---------- */
+.stats-block {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 14px; padding: 18px 20px 20px;
+}
+.sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.sb-title { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+.sb-note { font-size: 12px; color: var(--text-sub); text-align: right; }
+
+/* ---------- график по дням ---------- */
+.chart { display: flex; flex-direction: column; gap: 10px; }
+.chart-bars { display: flex; align-items: flex-end; gap: 2px; height: 170px; }
+.bar-wrap { flex: 1 1 0; min-width: 2px; height: 100%; display: flex; align-items: flex-end; }
+.bar {
+  width: 100%; min-height: 3px; border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 45%, #fff) 0%, var(--accent) 100%);
+  transition: height .35s cubic-bezier(.16, 1, .3, 1), filter .15s;
+}
+.bar.zero { background: rgba(255, 255, 255, .07); }
+.bar-wrap:hover .bar { filter: brightness(1.4); }
+.chart-foot { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+
+/* ---------- тепловая карта: дни недели × часы ---------- */
+.heat { display: flex; flex-direction: column; gap: 10px; }
+.heat-grid { display: grid; gap: 3px; align-items: center; }
+.heat-h { font-size: 10px; color: var(--text-sub); text-align: center; }
+.heat-cap { font-size: 11px; color: var(--text-sub); }
+.heat-cell {
+  height: 26px; border-radius: 3px; background: rgba(255, 255, 255, .05);
+  transition: transform .12s, filter .12s;
+}
+.heat-cell.on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+.heat-cell.on:hover { transform: scale(1.35); filter: brightness(1.3); z-index: 2; }
+.heat-legend { display: flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 11px; }
+.heat-legend-cell { width: 12px; height: 12px; border-radius: 3px; display: block; }
+
+/* ---------- топ исполнителей ---------- */
+.top-list { display: flex; flex-direction: column; gap: 4px; }
+.tl-row {
+  display: grid; grid-template-columns: 20px 44px minmax(0, 1fr) auto 32px;
+  align-items: center; gap: 12px; padding: 6px 8px; border-radius: 10px;
+}
+.tl-row:hover { background: rgba(255, 255, 255, .06); }
+.tl-rank { font-size: 14px; font-weight: 800; color: var(--text-sub); text-align: right; }
+/* обложка приходит без размеров — задаём их сами, иначе картинка растёт по своей */
+.tl-row img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.tl-body { min-width: 0; }
+.tl-name { font-size: 14px; display: flex; align-items: center; min-height: 22px; margin-bottom: 4px; }
+/* ссылка на исполнителя — не строчка в 16 px, а нормальная цель для мыши */
+.tl-name a, .tl-name span.ellipsis { display: block; width: 100%; padding: 3px 0; }
+.tl-name a { color: #fff; }
+.tl-name a:hover { text-decoration: underline; }
+.tl-bar { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.tl-bar i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, #fff), var(--accent));
+  transition: width .35s cubic-bezier(.16, 1, .3, 1);
+}
+.tl-meta { text-align: right; font-size: 13px; }
+.tl-meta .muted { font-size: 11px; }
+
+/* ---------- топ альбомов ---------- */
+.stats-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.alb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; }
+.alb-cover { position: relative; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.alb-cover img { width: 100%; aspect-ratio: 1 / 1; height: auto; object-fit: cover; display: block; }
+.alb-rank {
+  position: absolute; left: 6px; top: 6px; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff;
+  font-size: 11px; font-weight: 800; display: grid; place-items: center; backdrop-filter: blur(4px);
+}
+.alb-play {
+  position: absolute; right: 8px; bottom: 8px; width: 36px; height: 36px; border-radius: 50%;
+  background: var(--green); color: #000; display: grid; place-items: center;
+  opacity: 0; transform: translateY(6px); transition: .18s; box-shadow: 0 8px 16px rgba(0, 0, 0, .5);
+}
+.alb-card:hover .alb-play, .alb-play:focus-visible { opacity: 1; transform: none; }
+.alb-card.link { cursor: pointer; }
+.alb-name { margin-top: 8px; font-size: 13px; font-weight: 600; }
+.alb-meta { margin-top: 2px; font-size: 12px; }
+
+/* ---------- жанры ---------- */
+.gen-list { display: flex; flex-direction: column; gap: 10px; }
+.gen-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 90px; align-items: center; gap: 14px; }
+.gen-name { font-size: 13px; }
+.gen-bar { height: 10px; border-radius: 999px; background: rgba(255, 255, 255, .06); overflow: hidden; }
+.gen-bar i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 35%, #fff));
+  transition: width .35s cubic-bezier(.16, 1, .3, 1);
+}
+.gen-val { font-size: 12px; text-align: right; }
+
+/* ---------- факты ---------- */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.fact { padding: 14px 16px 16px; border-radius: 12px; background: var(--panel-3); border: 1px solid var(--line); }
+.fact-ic { color: color-mix(in srgb, var(--accent) 60%, #fff); margin-bottom: 8px; }
+.fact-value { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.fact-cap { margin-top: 4px; font-size: 12px; color: var(--text-sub); }
+.fact-sub { margin-top: 2px; font-size: 11px; }
+
+/* узкий экран: крупная цифра уезжает под заголовок, колонки складываются */
+@media (max-width: 1000px) {
+  .stats-hero-num { text-align: left; padding-bottom: 0; }
+  .shn-value { justify-content: flex-start; }
+  .stats-cols { grid-template-columns: 1fr; }
+  .gen-row { grid-template-columns: 120px minmax(0, 1fr) 80px; }
+}

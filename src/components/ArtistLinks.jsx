@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { artistTokens, resolveArtistTokens, resolveArtistId } from '../lib/artists';
+import { bannedKeys, isBannedArtist } from '../lib/banned.js';
+import useStore from '../state/store';
+import { Ban, Check } from './Icons';
 
 const displayOf = (item) => String(item?.displayArtist || item?.artist || item?.name || '');
 const idOf = (item) => (item ? `${item.artistId || ''}|${displayOf(item)}|${item.artists?.length || 0}` : '');
@@ -86,12 +89,28 @@ export default function ArtistLinks({
   );
 }
 
-/** Пункты контекстного меню «Перейти к исполнителю» (по одному на каждого). */
+/**
+ * Пункты контекстного меню: переход к исполнителю и блокировка.
+ * Бан — «чтобы не попадался»: треки такого исполнителя перестают приходить
+ * в AutoDJ, радио и случайном выборе, а по настройке и вовсе прячутся.
+ */
 export function useArtistMenuItems() {
   const nav = useNavigate();
+  const bannedList = useStore((s) => s.settings.bannedArtists);
+  const toggleArtistBan = useStore((s) => s.toggleArtistBan);
   return useCallback((item, before) => {
     const list = artistTokens(item).filter((t) => t.type === 'artist');
     if (!list.length) return [];
+    const keys = bannedKeys(bannedList || []);
+    const banItem = (a) => {
+      const on = isBannedArtist(keys, a);
+      return {
+        label: `${on ? 'Разблокировать' : 'Заблокировать'}: ${a.name}`,
+        icon: on ? <Check size={14} /> : <Ban size={14} />,
+        danger: !on,
+        onClick: () => toggleArtistBan({ id: a.id || null, name: a.name }),
+      };
+    };
 
     const open = async (a) => {
       before?.();
@@ -103,10 +122,18 @@ export function useArtistMenuItems() {
       nav(wholeId ? `/artist/${wholeId}` : `/search?q=${encodeURIComponent(a.name)}`);
     };
 
-    if (list.length === 1) return [{ label: 'Перейти к исполнителю', onClick: () => open(list[0]) }];
+    if (list.length === 1) {
+      return [
+        { label: 'Перейти к исполнителю', onClick: () => open(list[0]) },
+        banItem(list[0]),
+      ];
+    }
     return [
       { label: 'Перейти к исполнителю', header: true },
       ...list.map((a) => ({ label: a.name, onClick: () => open(a) })),
+      { sep: true },
+      { label: 'Заблокировать исполнителя', header: true },
+      ...list.map(banItem),
     ];
-  }, [nav]);
+  }, [nav, bannedList, toggleArtistBan]);
 }

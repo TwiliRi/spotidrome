@@ -19,6 +19,12 @@ const WinRestore = () => (
     <path d="M2.5 2.5V0.5h7v7h-2" fill="none" stroke="currentColor" />
   </svg>
 );
+/* выйти из полноэкранного режима окна: уголки «сходятся» к центру */
+const WinFullExit = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10">
+    <path d="M3.5 0.5h-3v3M6.5 0.5h3v3M9.5 6.5v3h-3M0.5 6.5v3h3" fill="none" stroke="currentColor" strokeWidth="1" />
+  </svg>
+);
 const WinClose = () => (
   <svg width="10" height="10" viewBox="0 0 10 10">
     <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="currentColor" strokeWidth="1.1" fill="none" />
@@ -49,6 +55,7 @@ export default function TitleBar({ minimal = false }) {
   const [hl, setHl] = useState(-1);                      // строка, выбранная стрелками
   const [menu, setMenu] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [focused, setFocused] = useState(true);
   const [folderMenu, setFolderMenu] = useState(false);
   const [canBack, setCanBack] = useState(false);
@@ -63,7 +70,11 @@ export default function TitleBar({ minimal = false }) {
   useEffect(() => {
     if (!desktop?.onWindowState) return;
     desktop.isMaximized?.().then(setMaximized).catch(() => {});
-    return desktop.onWindowState((s) => { setMaximized(!!s.maximized); setFocused(!!s.focused); });
+    return desktop.onWindowState((s) => {
+      setMaximized(!!s.maximized);
+      setFullscreen(!!s.fullscreen);
+      setFocused(!!s.focused);
+    });
   }, []);
 
   /* история навигации */
@@ -320,9 +331,18 @@ export default function TitleBar({ minimal = false }) {
         {desktop && !isMac && (
           <div className="tb-winbtns no-drag">
             <button className="tb-winbtn" title="Свернуть" onClick={() => desktop.minimize()}><WinMin /></button>
-            <button className="tb-winbtn" title={maximized ? 'Восстановить' : 'Развернуть'} onClick={() => desktop.maximizeToggle().then(setMaximized)}>
-              {maximized ? <WinRestore /> : <WinMax />}
-            </button>
+            {/* в полноэкранном режиме «развернуть» не имеет смысла — вместо неё выход */}
+            {fullscreen ? (
+              <button
+                className="tb-winbtn"
+                title="Выйти из полноэкранного режима (F11)"
+                onClick={() => desktop.toggleFullscreen?.()}
+              ><WinFullExit /></button>
+            ) : (
+              <button className="tb-winbtn" title={maximized ? 'Восстановить' : 'Развернуть'} onClick={() => desktop.maximizeToggle().then(setMaximized)}>
+                {maximized ? <WinRestore /> : <WinMax />}
+              </button>
+            )}
             <button className="tb-winbtn close" title="Закрыть" onClick={() => desktop.closeWindow()}><WinClose /></button>
           </div>
         )}
